@@ -20,18 +20,79 @@ The inputs and outputs are denoted and defined as follows:
     F = N(M, I; θ), where θ are parameters of the network N.
 """
 
-import os
 from typing import Tuple, Union
 import numpy as np
 import SimpleITK as sitk
+import torch
+import torch.nn.functional as F
 from torch.nn import Module
 
-__all__ = ["SpatialTransformer", "RegistrationNetwork", "RegistrationSimulator3D"]
+__all__ = ["SpatialTransformer3D", "RegistrationNetwork", "RegistrationSimulator3D"]
 
+class SpatialTransformer3D(Module):
+    """
+    Note, this implementation follows the specification from the VoxelMorph Paper.
+    """
+    def __init__(self, use_cuda=False):
+        self.device = "cuda" if use_cuda else "cpu"
+        self.ndims = 3
 
-class SpatialTransformer(Module):
-    def __init__(self):
-        raise NotImplementedError
+    def forward(
+        self, image: torch.Tensor, displacement_field: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Resamples input image onto the target grid.
+
+        Recall:
+
+        G_s -> Source grid
+        G_t -> Target grid
+        ẟ -> displacement field on G_s
+
+        G_t = Φ(G_s) = G_s + ẟ(G_s)
+
+        We then scale the targrt grid so that the inputs are within -1 and 1.
+
+        G_ts = S(G_t)
+        I_r = Resample(I, G_ts) where I and I_r are the original and resampled
+        images respectively.
+
+        Parameters
+        ----------
+        image: Torch.Tensor
+            Image with dimensions (B, C, D, H, W)
+        displacement_field: Torch.Tensor
+            Displacement field with dimensions (B, D, H, W, 3)
+        Returns
+        -------
+        transformed_image: Torch.Tensor
+            Image with spatial transformer
+        """
+        _, _, D, H, W = image.shape
+        grid_d, grid_h, grid_w = torch.meshgrid(
+            torch.arange(0, D), torch.arange(0, H), torch.arange(0, W)
+        )
+        source_grid = torch.stack((grid_d, grid_h, grid_w), self.ndims).float() # (D, H, W, 3)
+        source_grid.requires_grad = False
+
+        target_grid = source_grid + displacement_field # (B, D, H, W, 3)
+        tgrid = target_grid.view(-1,3)
+        tgrid[:,0] = 2*(tgrid[:,0]-tgrid[:,0].min())/(tgrid[:,0].max()-tgrid[:,0].min())-1
+        tgrid[:,1] = 2*(tgrid[:,1]-tgrid[:,1].min())/(tgrid[:,1].max()-tgrid[:,1].min())-1
+        tgrid[:,2] = 2*(tgrid[:,2]-tgrid[:,2].min())/(tgrid[:,2].max()-tgrid[:,2].min())-1
+        # d_min, d_max = tgrid_unrolled[:,0].min(), tgrid_unrolled[0].max()
+        # h_min, h_max = tgrid_unrolled[:,1].min(), tgrid_unrolled[1].max()
+        # w_min, w_max = tgrid_unrolled[:,2].min(), tgrid_unrolled[2].max()
+        # # d_min, d_max = target_grid[:,:,:,0].min(), target_grid[:,:,:,0].max()
+        # # h_min, h_max = target_grid[:,:,:,1].min(), target_grid[:,:,:,1].max()
+        # # w_min, w_max = target_grid[:,:,:,2].min(), target_grid[:,:,:,2].max()
+        # #
+        # target_grid_scaled = torch.zeros_like(target_grid)
+        # target_grid_scaled[:,:,:,0] = 2*((target_grid[:,:,:,0]-d_min)/(d_max-d_min))-1
+        # target_grid_scaled[:,:,:,1] = 2*((target_grid[:,:,:,1]-h_min)/(h_max-h_min))-1
+        # target_grid_scaled[:,:,:,2] = 2*((target_grid[:,:,:,2]-w_min)/(w_max-w_min))-1
+        output = F.grid_sample(image, target_grid, align_corners=False) # (B, C, D, H, W)
+        return output
 
 
 class RegistrationNetwork(Module):
@@ -82,6 +143,8 @@ class RegistrationSimulator3D:
 
         # U: Uniformly sample
         U = lambda umin, umax: np.random.choice(np.linspace(umin, umax, 100))
+
+        image = sitk.GetImageFromArray(sitk.GetArrayFromImage(image))
 
         image_fixed_parameters = []
         for param in [
@@ -175,6 +238,12 @@ class RegistrationSimulator3D:
 
         return displacement_field
 
+def write_nifti(image: sitk.Image, fname: str):
+    writer = sitk.ImageFileWriter()
+    writer.SetImageIO("NiftiImageIO")
+    writer.SetFileName(fname+".nii.gz")
+    writer.Execute(image)
+
 
 if __name__ == "__main__":
     simulator = RegistrationSimulator3D()
@@ -184,14 +253,26 @@ if __name__ == "__main__":
     image = reader.Execute()
 
     deformation_field = simulator.get_new_displacement_field(image)
-    # arr = sitk.GetArrayFromImage(deformation_field)
-    # breakpoint()
+    write_nifti(deformation_field, "deformation_field")
 
-    os.system("mkdir -p ../data/tmp")
-    writer = sitk.ImageFileWriter()
-    writer.SetImageIO("NiftiImageIO")
-    writer.SetFileName("../data/tmp/deformation_field.nii.gz")
-    writer.Execute(deformation_field)
-    print(
-        "Successfully generated deformation field at ../data/tmp/deformation_field.nii.gz"
-    )
+    deformation_array = sitk.GetArrayFromImage(deformation_field)
+    deformation_pt = torch.Tensor(deformation_array).moveaxis(2,0).unsqueeze(0)
+    image_pt = torch.Tensor(sitk.GetArrayFromImage(image)).moveaxis(-1,0).unsqueeze(0).unsqueeze(0)
+
+    image_transformed_pt = SpatialTransformer3D().forward(image_pt, deformation_pt)
+    image_transformed = sitk.GetImageFromArray(image_transformed_pt.squeeze().numpy().T)
+    breakpoint()
+    image_transformed.CopyInformation(image)
+    write_nifti(image_transformed, "transformed")
+
+    # writer.SetFileName("orig_array.nii.gz")
+    # # writer.Execute(sitk.GetImageFromArray(image_pt.numpy()))
+    #
+    # image_transformed.SetSpacing(image.GetSpacing())
+    # image_transformed.SetDirection(image.GetDirection())
+    # image_transformed.SetOrigin(image.GetOrigin())
+    #
+    # writer.SetFileName("transformed.nii.gz")
+    # writer.Execute(image_transformed)
+    # writer.SetFileName("deformation_array.nii.gz")
+    # writer.Execute(sitk.GetImageFromArray(deformation_array))
