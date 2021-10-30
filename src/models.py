@@ -21,24 +21,29 @@ The inputs and outputs are denoted and defined as follows:
 """
 
 from typing import Tuple, Union
-import numpy as np
+
 import SimpleITK as sitk
+import numpy as np
 import torch
-import torch.nn.functional as F
 from torch.nn import Module
+import torch.nn.functional as F
 
 __all__ = ["SpatialTransformer3D", "RegistrationNetwork", "RegistrationSimulator3D"]
+
 
 class SpatialTransformer3D(Module):
     """
     Note, this implementation follows the specification from the VoxelMorph Paper.
     """
+
     def __init__(self, use_cuda=False):
         self.device = "cuda" if use_cuda else "cpu"
         self.ndims = 3
 
     def forward(
-        self, image: torch.Tensor, displacement_field: torch.Tensor
+        self,
+        image: torch.Tensor,
+        displacement_field: torch.Tensor,
     ) -> torch.Tensor:
         """
         Resamples input image onto the target grid.
@@ -63,6 +68,8 @@ class SpatialTransformer3D(Module):
             Image with dimensions (B, C, D, H, W)
         displacement_field: Torch.Tensor
             Displacement field with dimensions (B, D, H, W, 3)
+        sitk_image: sitk.Image
+            SimpleITK version of the image, which is used to generate a source grid
         Returns
         -------
         transformed_image: Torch.Tensor
@@ -72,26 +79,15 @@ class SpatialTransformer3D(Module):
         grid_d, grid_h, grid_w = torch.meshgrid(
             torch.arange(0, D), torch.arange(0, H), torch.arange(0, W)
         )
-        source_grid = torch.stack((grid_d, grid_h, grid_w), self.ndims).float() # (D, H, W, 3)
+        source_grid = torch.stack(
+            (grid_d, grid_h, grid_w), 3  # self.ndims
+        ).float()  # (D, H, W, 3)
         source_grid.requires_grad = False
 
-        target_grid = source_grid + displacement_field # (B, D, H, W, 3)
-        tgrid = target_grid.view(-1,3)
-        tgrid[:,0] = 2*(tgrid[:,0]-tgrid[:,0].min())/(tgrid[:,0].max()-tgrid[:,0].min())-1
-        tgrid[:,1] = 2*(tgrid[:,1]-tgrid[:,1].min())/(tgrid[:,1].max()-tgrid[:,1].min())-1
-        tgrid[:,2] = 2*(tgrid[:,2]-tgrid[:,2].min())/(tgrid[:,2].max()-tgrid[:,2].min())-1
-        # d_min, d_max = tgrid_unrolled[:,0].min(), tgrid_unrolled[0].max()
-        # h_min, h_max = tgrid_unrolled[:,1].min(), tgrid_unrolled[1].max()
-        # w_min, w_max = tgrid_unrolled[:,2].min(), tgrid_unrolled[2].max()
-        # # d_min, d_max = target_grid[:,:,:,0].min(), target_grid[:,:,:,0].max()
-        # # h_min, h_max = target_grid[:,:,:,1].min(), target_grid[:,:,:,1].max()
-        # # w_min, w_max = target_grid[:,:,:,2].min(), target_grid[:,:,:,2].max()
-        # #
-        # target_grid_scaled = torch.zeros_like(target_grid)
-        # target_grid_scaled[:,:,:,0] = 2*((target_grid[:,:,:,0]-d_min)/(d_max-d_min))-1
-        # target_grid_scaled[:,:,:,1] = 2*((target_grid[:,:,:,1]-h_min)/(h_max-h_min))-1
-        # target_grid_scaled[:,:,:,2] = 2*((target_grid[:,:,:,2]-w_min)/(w_max-w_min))-1
-        output = F.grid_sample(image, target_grid, align_corners=False) # (B, C, D, H, W)
+        target_grid = source_grid + displacement_field  # (B, D, H, W, 3)
+        output = F.grid_sample(
+            image, target_grid, align_corners=False
+        )  # (B, C, D, H, W)
         return output
 
 
@@ -103,6 +99,8 @@ class RegistrationNetwork(Module):
 class RegistrationSimulator3D:
     """
     Parameters from the original paper are the default values.
+
+    Note: the rotation parameter is in degrees.
     """
 
     def __init__(
@@ -123,6 +121,8 @@ class RegistrationSimulator3D:
         self.offset_gaussian_std_max = offset_gaussian_std_max
         self.smoothing_gaussian_std_min = smoothing_gaussian_std_min
         self.smoothing_gaussian_std_max = smoothing_gaussian_std_max
+
+        self.transform = None
         self.deformation_field = None
 
     def __tuplify(
@@ -136,34 +136,37 @@ class RegistrationSimulator3D:
             return (a, a, a)
 
     def get_new_displacement_field(self, image: sitk.Image) -> sitk.Image:
-        self.displacement_field = self.__get_displacement_field(image)
+        """
+        Gets the new displacement field.
+        """
+
+        self.transform = self.__random_transform(image)
+        t2df = sitk.TransformToDisplacementFieldFilter()
+        t2df.SetReferenceImage(image)
+        self.displacement_field = t2df.Execute(self.transform)
+
         return self.displacement_field
 
-    def __get_displacement_field(self, image: sitk.Image) -> sitk.Image:
+    def __random_transform(self, image: sitk.Image) -> sitk.Transform:
+        """
+        Transforms the input grid image.
+
+        This grid can then be used to resample the original image
+        """
 
         # U: Uniformly sample
         U = lambda umin, umax: np.random.choice(np.linspace(umin, umax, 100))
-
-        image = sitk.GetImageFromArray(sitk.GetArrayFromImage(image))
-
-        image_fixed_parameters = []
-        for param in [
-            image.GetSize(),
-            image.GetOrigin(),
-            image.GetSpacing(),
-            image.GetDirection(),
-        ]:
-            image_fixed_parameters.extend(param)
 
         #########################
         # 1. Rotation
         #########################
 
         angles = [U(0, self.rotation_max[i]) for i in range(self.ndims)]
+        angles = [U(0, 30) for _ in range(3)]
         radians = [np.pi * angle / 180 for angle in angles]
         center = image.GetOrigin()
         rotation = sitk.Euler3DTransform(center, *radians, tuple([0] * self.ndims))
-        rotation.SetFixedParameters(image_fixed_parameters)
+
         #########################
         # 2. Scaling
         #########################
@@ -173,7 +176,6 @@ class RegistrationSimulator3D:
         )
 
         scale = sitk.ScaleTransform(self.ndims, scaling)
-        scale.SetFixedParameters(image_fixed_parameters)
 
         #########################
         # 3. Translation
@@ -184,7 +186,6 @@ class RegistrationSimulator3D:
             [image.GetSize()[i] * tf for i, tf in enumerate(translation_factor)]
         )
         translation = sitk.TranslationTransform(self.ndims, translation_amount)
-        translation.SetFixedParameters(image_fixed_parameters)
 
         #########################
         # 4. Elastic Deformation
@@ -224,55 +225,59 @@ class RegistrationSimulator3D:
         # Note: SITK Composite Transform  applies transforms in reverse order,
         # so the transforms need to be added in reverse order
 
-        ctransform = sitk.CompositeTransform([translation, scale, rotation])
         ctransform = sitk.CompositeTransform(
-            [elastic_displacement_field_transform, ctransform]
+            [elastic_displacement_field_transform, translation, scale, rotation]
         )
-        displacement_field = sitk.TransformToDisplacementField(
-            ctransform,
-            size=image.GetSize(),
-            outputOrigin=image.GetOrigin(),
-            outputSpacing=image.GetSpacing(),
-            outputDirection=image.GetDirection(),
-        )
+        return ctransform
 
-        return displacement_field
 
-def write_nifti(image: sitk.Image, fname: str):
+def nifti_writer():
     writer = sitk.ImageFileWriter()
     writer.SetImageIO("NiftiImageIO")
-    writer.SetFileName(fname+".nii.gz")
-    writer.Execute(image)
+
+    def write_nifti(image: sitk.Image, fname: str):
+        writer.SetFileName(fname + ".nii.gz")
+        writer.Execute(image)
+
+    return write_nifti
 
 
 if __name__ == "__main__":
     simulator = RegistrationSimulator3D()
+
     reader = sitk.ImageFileReader()
     reader.SetImageIO("NiftiImageIO")
     reader.SetFileName("../data/test_image.nii.gz")
     image = reader.Execute()
+    writer = nifti_writer()
 
-    deformation_field = simulator.get_new_displacement_field(image)
-    write_nifti(deformation_field, "deformation_field")
-
-    deformation_array = sitk.GetArrayFromImage(deformation_field)
-    deformation_pt = torch.Tensor(deformation_array).moveaxis(2,0).unsqueeze(0)
-    image_pt = torch.Tensor(sitk.GetArrayFromImage(image)).moveaxis(-1,0).unsqueeze(0).unsqueeze(0)
-
-    image_transformed_pt = SpatialTransformer3D().forward(image_pt, deformation_pt)
-    image_transformed = sitk.GetImageFromArray(image_transformed_pt.squeeze().numpy().T)
-    breakpoint()
-    image_transformed.CopyInformation(image)
-    write_nifti(image_transformed, "transformed")
-
-    # writer.SetFileName("orig_array.nii.gz")
-    # # writer.Execute(sitk.GetImageFromArray(image_pt.numpy()))
+    # displacement_field = simulator.get_new_displacement_field(image)
+    # writer(df, "df")
+    # writer(resampled_sitk, "monalala")
     #
-    # image_transformed.SetSpacing(image.GetSpacing())
-    # image_transformed.SetDirection(image.GetDirection())
-    # image_transformed.SetOrigin(image.GetOrigin())
+    # resample_grid = simulator.get_new_displacement_field(image)
+    # resample_grid = torch.from_numpy(sitk.GetArrayFromImage(resample_grid)).float().reshape((*image.GetSize(), -1)).unsqueeze(0)
     #
-    # writer.SetFileName("transformed.nii.gz")
-    # writer.Execute(image_transformed)
-    # writer.SetFileName("deformation_array.nii.gz")
-    # writer.Execute(sitk.GetImageFromArray(deformation_array))
+    # breakpoint()
+    # #
+    # # transformed_image = sitk.Resample(image, dftransform).Execute()
+    # # writer(deformation_field, "deformation_field")
+    # # writer(transformed_image, "transformed_sitk")
+    # #
+    # # deformation_array = sitk.GetArrayFromImage(deformation_field)
+    # # deformation_pt = torch.Tensor(deformation_array).moveaxis(2, 0).unsqueeze(0)
+    #
+    # image_pt = (
+    #     torch.Tensor(sitk.GetArrayFromImage(image))
+    #     .reshape(image.GetSize())
+    #     .moveaxis(-1, 0)
+    #     .unsqueeze(0)
+    #     .unsqueeze(0)
+    # )
+    #
+    # resampled = sitk.GetImageFromArray((F.grid_sample(image_pt, resample_grid).numpy()))
+    # writer(resampled, "resampled")
+    #
+    # # image_transformed_pt = SpatialTransformer3D().forward(image_pt, deformation_pt)
+    # # image_transformed = sitk.GetImageFromArray(image_transformed_pt.squeeze().numpy().T)
+    # # writer(image_transformed, "transformed")
