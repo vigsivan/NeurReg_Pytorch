@@ -20,76 +20,133 @@ The inputs and outputs are denoted and defined as follows:
     F = N(M, I; θ), where θ are parameters of the network N.
 """
 
+"""
+Problems:
+* What happens when I programmatically resample the image using sitk?
+* What happens when I programmatically resample the image using sitk after conversion to Pytorch?
+"""
+
 from typing import Tuple, Union
+import random
 
 import SimpleITK as sitk
 import numpy as np
 import torch
+import torchio as tio
 from torch.nn import Module
-import torch.nn.functional as F
 
-__all__ = ["SpatialTransformer3D", "RegistrationNetwork", "RegistrationSimulator3D"]
+# __all__ = ["SpatialTransformer3D", "RegistrationNetwork", "RegistrationSimulator3D"]
+#
 
-
-class SpatialTransformer3D(Module):
-    """
-    Note, this implementation follows the specification from the VoxelMorph Paper.
-    """
-
-    def __init__(self, use_cuda=False):
-        self.device = "cuda" if use_cuda else "cpu"
-        self.ndims = 3
-
-    def forward(
-        self,
-        image: torch.Tensor,
-        displacement_field: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Resamples input image onto the target grid.
-
-        Recall:
-
-        G_s -> Source grid
-        G_t -> Target grid
-        ẟ -> displacement field on G_s
-
-        G_t = Φ(G_s) = G_s + ẟ(G_s)
-
-        We then scale the targrt grid so that the inputs are within -1 and 1.
-
-        G_ts = S(G_t)
-        I_r = Resample(I, G_ts) where I and I_r are the original and resampled
-        images respectively.
-
-        Parameters
-        ----------
-        image: Torch.Tensor
-            Image with dimensions (B, C, D, H, W)
-        displacement_field: Torch.Tensor
-            Displacement field with dimensions (B, D, H, W, 3)
-        sitk_image: sitk.Image
-            SimpleITK version of the image, which is used to generate a source grid
-        Returns
-        -------
-        transformed_image: Torch.Tensor
-            Image with spatial transformer
-        """
-        _, _, D, H, W = image.shape
-        grid_d, grid_h, grid_w = torch.meshgrid(
-            torch.arange(0, D), torch.arange(0, H), torch.arange(0, W)
-        )
-        source_grid = torch.stack(
-            (grid_d, grid_h, grid_w), 3  # self.ndims
-        ).float()  # (D, H, W, 3)
-        source_grid.requires_grad = False
-
-        target_grid = source_grid + displacement_field  # (B, D, H, W, 3)
-        output = F.grid_sample(
-            image, target_grid, align_corners=False
-        )  # (B, C, D, H, W)
-        return output
-
+# class SpatialTransformer3D(Module):
+#     """
+#     Note, this implementation follows the specification from the VoxelMorph Paper.
+#
+#     The SITK image is passed in so that we can convert index to physical coords
+#     and resample the image in physical coords
+#
+#     Steps:
+#         1. Compute image affine
+#         2. Generate displaced grid
+#         3. Resample image on this displaced grid
+#
+#     Potential problems:
+#         index = Ainv * (P - Ori)
+#     """
+#
+#     def __init__(self, use_cuda=False):
+#         self.device = "cuda" if use_cuda else "cpu"
+#         self.ndims = 3
+#
+#     def compute_physical_grid(self, image_sitk):
+#         """
+#         Computes the physical grid from the image
+#         """
+#         index_grid = torch.stack(
+#             torch.meshgrid(*[torch.arange(0, i, 1) for i in image_sitk.GetSize()]),
+#             dim=3,
+#         ).float().reshape(3, -1)  # self.ndims).float()
+#         orientation_matrix = np.array(image_sitk.GetDirection()).reshape(
+#             (3, 3)
+#         )  # self.ndims,self.ndims))
+#         spacing_matrix = np.array(image_sitk.GetSpacing()) * np.identity(
+#             3
+#         )  # self.ndims)
+#         image_affine = torch.tensor(orientation_matrix @ spacing_matrix).float()
+#         physical_grid = torch.tensor(image_sitk.GetOrigin()) + (
+#             image_affine @ index_grid
+#         )
+#         physical_grid.to(self.device)
+#         return physical_grid
+#
+#     # def __normalize(self, grid) -> torch.Tensor:
+#     #     """
+#     #     torch's grid_simple takes inputs between -1 and 1, so this function
+#     #     normalizes the inputs using the formula:
+#     #
+#     #     x = 2 * (x-minx)/(maxx-minx) -1
+#     #     """
+#     #     g = grid.view(3, -1)
+#     #     for i in range(3):
+#     #         x = g[i, :]
+#     #         g[i, :] = 2 * (x - x.min()) / (x.max() - x.min()) - 1
+#     #     return grid
+#     #
+#
+#     def resample(self,image: torch.Tensor, grid: torch.Tensor)->torch.Tensor:
+#         raise NotADirectoryError
+#
+#     def forward(
+#         self,
+#         image: torch.Tensor,
+#         displacement_field: torch.Tensor,
+#         image_sitk: sitk.Image,
+#     ) -> torch.Tensor:
+#         """
+#         Resamples input image onto the target grid.
+#
+#         Recall:
+#
+#         G_s -> Source grid
+#         G_t -> Target grid
+#         ẟ -> displacement field on G_s
+#
+#         G_t = Φ(G_s) = G_s + ẟ(G_s)
+#
+#         We then scale the targrt grid so that the inputs are within -1 and 1.
+#
+#         G_ts = S(G_t)
+#         I_r = Resample(I, G_ts) where I and I_r are the original and resampled
+#         images respectively.
+#
+#         Parameters
+#         ----------
+#         image: Torch.Tensor
+#             Image with dimensions (B, C, D, H, W)
+#         displacement_field: Torch.Tensor
+#             Displacement field with dimensions (B, D, H, W, 3)
+#         sitk_image: sitk.Image
+#             SimpleITK version of the image, which is used to generate a source grid
+#         Returns
+#         -------
+#         transformed_image: Torch.Tensor
+#             Image with spatial transformer
+#         """
+#         physical_grid = self.compute_physical_grid(image_sitk)
+#         physical_grid.requires_grad = False
+#
+#         # ic(physical_grid.shape)
+#         ic(displacement_field.shape)
+#         target_grid = (
+#             physical_grid + displacement_field # physical_grid + displacement_field
+#         )  # (B, D, H, W, 3)
+#         breakpoint()
+#         ic(target_grid.shape)
+#         # output = F.grid_sample(image, target_grid, mode="bilinear", align_corners=False)
+#         output = self.resample(image, target_grid)
+#
+#         return output
+#
 
 class RegistrationNetwork(Module):
     def __init__(self):
@@ -144,10 +201,9 @@ class RegistrationSimulator3D:
         t2df = sitk.TransformToDisplacementFieldFilter()
         t2df.SetReferenceImage(image)
         self.displacement_field = t2df.Execute(self.transform)
-
         return self.displacement_field
 
-    def __random_transform(self, image: sitk.Image) -> sitk.Transform:
+    def __random_transform(self, image: sitk.Image) ->  sitk.Transform:
         """
         Transforms the input grid image.
 
@@ -235,49 +291,99 @@ def nifti_writer():
     writer = sitk.ImageFileWriter()
     writer.SetImageIO("NiftiImageIO")
 
-    def write_nifti(image: sitk.Image, fname: str):
+    def write_nifti(image: Union[sitk.Image, torch.Tensor], fname: str):
         writer.SetFileName(fname + ".nii.gz")
-        writer.Execute(image)
+        if isinstance(image, sitk.Image):
+            writer.Execute(image)
+        else:
+            vector_image = sitk.GetImageFromArray(image.numpy())
+            writer.Execute(vector_image)
 
     return write_nifti
 
 
-if __name__ == "__main__":
-    simulator = RegistrationSimulator3D()
+## MAIN:
+random.seed(42)
+np.random.seed(42)
 
-    reader = sitk.ImageFileReader()
-    reader.SetImageIO("NiftiImageIO")
-    reader.SetFileName("../data/test_image.nii.gz")
-    image = reader.Execute()
-    writer = nifti_writer()
+simulator = RegistrationSimulator3D()
 
-    # displacement_field = simulator.get_new_displacement_field(image)
-    # writer(df, "df")
-    # writer(resampled_sitk, "monalala")
-    #
-    # resample_grid = simulator.get_new_displacement_field(image)
-    # resample_grid = torch.from_numpy(sitk.GetArrayFromImage(resample_grid)).float().reshape((*image.GetSize(), -1)).unsqueeze(0)
-    #
-    # breakpoint()
-    # #
-    # # transformed_image = sitk.Resample(image, dftransform).Execute()
-    # # writer(deformation_field, "deformation_field")
-    # # writer(transformed_image, "transformed_sitk")
-    # #
-    # # deformation_array = sitk.GetArrayFromImage(deformation_field)
-    # # deformation_pt = torch.Tensor(deformation_array).moveaxis(2, 0).unsqueeze(0)
-    #
-    # image_pt = (
-    #     torch.Tensor(sitk.GetArrayFromImage(image))
-    #     .reshape(image.GetSize())
-    #     .moveaxis(-1, 0)
-    #     .unsqueeze(0)
-    #     .unsqueeze(0)
-    # )
-    #
-    # resampled = sitk.GetImageFromArray((F.grid_sample(image_pt, resample_grid).numpy()))
-    # writer(resampled, "resampled")
-    #
-    # # image_transformed_pt = SpatialTransformer3D().forward(image_pt, deformation_pt)
-    # # image_transformed = sitk.GetImageFromArray(image_transformed_pt.squeeze().numpy().T)
-    # # writer(image_transformed, "transformed")
+
+reader = sitk.ImageFileReader()
+reader.SetImageIO("NiftiImageIO")
+reader.SetFileName("../data/test_image.nii.gz")
+image = reader.Execute()
+writer = nifti_writer()
+
+image_pt = torch.Tensor(sitk.GetArrayFromImage(image)).unsqueeze(0).unsqueeze(0)
+im_reconstructed = sitk.GetImageFromArray(image_pt.squeeze().numpy())
+
+displacement_field = simulator.get_new_displacement_field(image)
+displacement_field_pt = (
+    torch.Tensor(sitk.GetArrayFromImage(displacement_field)).reshape((*image_pt, 3)).unsqueeze(0)
+)
+
+
+writer(displacement_field_pt, "displacement_field_pt")
+writer(image_pt, "image_pt")
+
+index_grid = torch.stack(
+    torch.meshgrid(*[torch.arange(0, i, 1) for i in image_pt.squeeze().shape]),
+    dim=3,
+).float().reshape(3, -1)  # self.ndims).float()
+
+orientation_matrix = np.array(image.GetDirection()).reshape(
+    (3, 3)
+)  # self.ndims,self.ndims))
+spacing_matrix = np.array(image.GetSpacing()) * np.identity(
+    3
+)  # self.ndims)
+image_affine = torch.tensor(orientation_matrix @ spacing_matrix).float()
+physical_grid = image_affine @ index_grid
+physical_grid = physical_grid.reshape_as(displacement_field_pt)
+physical_grid += torch.tensor(image.GetOrigin())
+
+target_grid = physical_grid + displacement_field_pt
+
+# writer(displacement_field, "displacement_field")
+#
+# image_transformed = sitk.GetImageFromArray(image_transformed_pt.squeeze().numpy().T)
+# nriter(image_transformed, "transformed")
+
+# Junk code:
+# Make quiver plot of displacement_field
+# slice_index = dfarr.shape[0] // 2
+# df_slice = dfarr[slice_index, :, :, :]
+#
+# orientation = df.GetDirection()
+# spacing = df.GetSpacing()
+#
+# size = image_sitk.GetSize()
+#
+# orientation = np.array(orientation).reshape((3, 3))
+# voxel_to_physical = (spacing * np.identity(3)) @ orientation
+# physical_to_voxel = np.linalg.inv(voxel_to_physical)
+#
+# # for i in range(df_slice.shape[0]):
+# #     for j in range(df_slice.shape[1]):
+# #         p = physical_to_voxel @ df_slice[i,j]
+# #         df_slice[i,j] = p
+#
+# x = df_slice[:, :, 0][::-1, ::-1]
+# y = -df_slice[:, :, 1][::-1, ::-1]
+#
+# coordsX = np.arange(
+#     0, size[0] * spacing[0], size[0] * spacing[0] / float(image.shape[2])
+# )
+# coordsY = np.arange(
+#     0, size[1] * spacing[1], size[1] * spacing[1] / float(image.shape[1])
+# )
+#
+# coordsX, coordsY = np.meshgrid(coordsX, coordsY)
+#
+# M = np.sqrt(x * x + y * y)
+#
+# qq = plt.quiver(coordsX, coordsY, x, y, M, cmap=plt.cm.jet, units="x", scale=1)
+#
+# plt.axis("off")
+# plt.show()
