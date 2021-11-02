@@ -1,12 +1,12 @@
 """
-NeurReg Models
---------------
+NeurReg Components
+------------------
 
-This file defines the following "modules":
+This file defines the following components:
 
-* RegistrationSimulator3D (S)  <- not a PyTorch module
-* SpatialTransformer (τ)       <- Pytorch modules
-* RegistrationNetwork (N)      <-       ︙
+* RegistrationSimulator3D (S)
+* SpatialTransformer (τ)
+* RegistrationNetwork (N)
 
 The inputs and outputs are denoted and defined as follows:
 
@@ -20,22 +20,98 @@ The inputs and outputs are denoted and defined as follows:
     F = N(M, I; θ), where θ are parameters of the network N.
 """
 
-from typing import Tuple, Union
+from typing import Tuple, Union, List
 import random
 
 import SimpleITK as sitk
 import numpy as np
 import torch
 import torchio as tio
-from torch.nn import Module
+from torch.nn import Module, Conv3d, ConvTranspose3d, Sequential, ModuleList
 import torch.nn.functional as F
 
-__all__ = ["SpatialTransformer", "RegistrationNetwork", "RegistrationSimulator3D"]
+__all__ = ["SpatialTransformer", "RegistrationNetwork3D", "RegistrationSimulator3D"]
 
 
-class RegistrationNetwork(Module):
-    def __init__(self):
-        raise NotImplementedError
+class RegistrationNetwork3D(Module):
+    """
+    Default parameters are taken from the paper.
+    """
+
+    dims: int = 3
+    lrelu_slope: float = 0.2
+
+    def __init__(
+        self,
+        kernel_size: int = 3,
+        encoder_channels: List[int] = [16, 32, 32, 32],
+        decoder_channels: List[int] = [32, 32, 32, 16],
+        bottleneck_channels: List[int] = [32, 32],
+        encoder_stride: int = 2,
+    ):
+        encoder_channels = [self.dims, *encoder_channels]
+        self.encoder_layers = ModuleList(
+            [
+                Conv3d(
+                    in_channels=ic,
+                    out_channels=oc,
+                    kernel_size=kernel_size,
+                    stride=encoder_stride,
+                )
+                for ic, oc in zip(encoder_channels, encoder_channels[1:])
+            ]
+        )
+
+        bottleneck_channels = [encoder_channels[-1], *bottleneck_channels]
+        self.bottleneck = Sequential(
+            *[
+                Conv3d(in_channels=ic, out_channels=oc, kernel_size=kernel_size)
+                for ic, oc in zip(bottleneck_channels, bottleneck_channels[1:])
+            ]
+        )
+
+        self.upsampling_layers = ModuleList(
+            [
+                ConvTranspose3d(
+                    in_channels=ic, out_channels=ic, kernel_size=kernel_size
+                )
+                for ic in [bottleneck_channels, *decoder_channels[:-1]]
+            ]
+        )
+
+        decoder_channels = [decoder_channels[0], *decoder_channels]
+        self.decoder_conv_layers = ModuleList(
+            [
+                Conv3d(in_channels=ic, out_channels=oc, kernel_size=kernel_size)
+                for ic, oc in zip(decoder_channels, decoder_channels[1:])
+            ]
+        )
+
+        self.output_conv_layer = Conv3d(
+            in_channels=decoder_channels[-1], out_channels=self.dims, kernel_size=3
+        )
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns the output registration field as well as the last layer of the network
+        """
+        encoder_outs = [self.encoder_layers[0](x)]
+        for i in range(1, len(self.encoder_layers)):
+            x_act = F.leaky_relu(encoder_outs[-1], self.lrelu_slope)
+            encoder_outs.append(self.encoder_layers[i](x_act))
+        decoder_input = self.bottleneck(encoder_outs[-1])
+        for eout, upsample, decoder_conv in zip(
+            encoder_outs, self.upsampling_layers, self.decoder_conv_layers
+        ):
+            out = upsample(decoder_input)
+            out = torch.cat(eout, out)
+            out = decoder_conv(out)
+            decoder_input = F.leaky_relu(out, self.lrelu_slope)
+
+        F_N = decoder_input  # final feature layer
+        output = self.output_conv_layer(decoder_input)
+
+        return F_N, output
 
 
 class SpatialTransformer(Module):
@@ -55,7 +131,7 @@ class SpatialTransformer(Module):
         grids = torch.meshgrid(vectors)
         grid = torch.stack(grids)
         grid = torch.unsqueeze(grid, 0)
-        grid = grid.type(torch.FloatTensor)
+        grid = grid.float()
 
         # registering the grid as a buffer cleanly moves it to the GPU, but it also
         # adds it to the state dict. this is annoying since everything in the state dict
@@ -64,7 +140,7 @@ class SpatialTransformer(Module):
         # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
         self.register_buffer("grid", grid)
 
-    def forward(self, src, flow):
+    def forward(self, src, flow) -> torch.Tensor:
         # new locations
         new_locs = self.grid + flow
         shape = flow.shape[2:]
@@ -100,7 +176,8 @@ class RegistrationSimulator3D:
         scale_min: Union[float, Tuple[float, float, float]] = 0.75,
         scale_max: Union[float, Tuple[float, float, float]] = 1.25,
         translation_factor: Union[float, Tuple[float, float, float]] = 0.02,
-        control_points: Union[int, Tuple[int, int, int]] = 7
+        control_points: Union[int, Tuple[int, int, int]] = (10, 7, 7),
+        num_elastics: int = 3  # new parameter to make more cord-y deformations
         # offset_gaussian_std_max: float = 1000,
         # smoothing_gaussian_std_min: float = 10,
         # smoothing_gaussian_std_max: float = 13,
@@ -112,6 +189,7 @@ class RegistrationSimulator3D:
         self.scale_max = self.__tuplify(scale_max)
         self.translation_factor = self.__tuplify(translation_factor)
         self.control_points = self.__tuplify_int(control_points)
+        self.num_elastics = num_elastics
         # self.offset_gaussian_std_max = offset_gaussian_std_max
         # self.smoothing_gaussian_std_min = smoothing_gaussian_std_min
         # self.smoothing_gaussian_std_max = smoothing_gaussian_std_max
@@ -191,17 +269,21 @@ class RegistrationSimulator3D:
         )
         affine_sitk = affine_tio.get_affine_transform(image)
 
-        elastic_cps = tio.RandomElasticDeformation.get_params(
-            num_control_points=self.control_points,
-            max_displacement=translation,
-            num_locked_borders=2,
-        )
-        elastic = tio.ElasticDeformation(
-            control_points=elastic_cps, max_displacement=translation
-        )
-        elastic_sitk = elastic.get_bspline_transform(image.as_sitk())
+        composite_transform = [affine_sitk]
 
-        return sitk.CompositeTransform((elastic_sitk, affine_sitk))
+        for _ in range(self.num_elastics):
+            elastic_cps = tio.RandomElasticDeformation.get_params(
+                num_control_points=self.control_points,
+                max_displacement=translation,
+                num_locked_borders=2,
+            )
+            elastic = tio.ElasticDeformation(
+                control_points=elastic_cps, max_displacement=translation
+            )
+            elastic_sitk = elastic.get_bspline_transform(image.as_sitk())
+            composite_transform.append(elastic_sitk)
+
+        return sitk.CompositeTransform(composite_transform[::-1])
 
 
 if __name__ == "__main__":
@@ -218,4 +300,4 @@ if __name__ == "__main__":
     stn = SpatialTransformer(image_tensor.squeeze().shape)
     resampled = stn.forward(image_tensor, disp_tensor).squeeze()
     resampled_image = tio.ScalarImage(tensor=resampled.unsqueeze(0))
-    resampled_image.save("../data/resamped.nii.gz")
+    resampled_image.save("../data/resampled3.nii.gz")
