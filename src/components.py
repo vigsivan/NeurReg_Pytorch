@@ -28,12 +28,12 @@ import numpy as np
 import torch
 import torchio as tio
 from torch import nn
-from torch.nn import Module, Conv3d, ConvTranspose3d, Sequential, ModuleList, LeakyReLU
 import torch.nn.functional as F
 
 __all__ = ["SpatialTransformer", "Unet3D", "RegistrationSimulator3D"]
 
-default_encoder_decoder_features = [[16,32,32,32],[32,32,32,32,16,16]]
+default_encoder_decoder_features = [[16, 32, 32, 32], [32, 32, 32, 32, 16, 16]]
+
 
 class Unet3D(nn.Module):
     """
@@ -46,44 +46,36 @@ class Unet3D(nn.Module):
     inshape: Tuple[int,int,int]
         Spatial dimensions of the input image.
     infeats: int
-         Number of input features.
+         Number of input features (channel dimension).
+         Default: 2
     nb_features: List[List[int]]
         Unet convolutional features. Specified via a list of lists with
         the form [[encoder feats], [decoder feats]]
+        Default: [[16, 32, 32, 32], [32, 32, 32, 32, 16, 16]]
     nb_conv_per_level: int
-        Number of convolutions per unet level. Default is 1.
+        Number of convolutions per unet level.
+        Default: 1
     half_res: bool
-        Skip the last decoder upsampling. Default is False.
+        Skip the last decoder upsampling.
+        Default: False
     """
 
-    def __init__(self,
-            inshape: Tuple[int,int,int],
-            infeats: int,
-            nb_features: List[List[int]]=default_encoder_decoder_features,
-            max_pool=2,
-            nb_conv_per_level=1,
-            half_res: bool=False):
-        """
-        Parameters:
-            inshape: Input shape. e.g. (192, 192, 192)
-            infeats: Number of input features.
-            nb_features: Unet convolutional features. Can be specified via a list of lists with
-                the form [[encoder feats], [decoder feats]], or as a single integer. 
-                If None (default), the unet features are defined by the default config described in 
-                the class documentation.
-            nb_levels: Number of levels in unet. Only used when nb_features is an integer. 
-                Default is None.
-            feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. 
-                Default is 1.
-            nb_conv_per_level: Number of convolutions per unet level. Default is 1.
-            half_res: Skip the last decoder upsampling. Default is False.
-        """
-
+    def __init__(
+        self,
+        inshape: Tuple[int, int, int],
+        infeats: int = 2,
+        nb_features: List[List[int]] = default_encoder_decoder_features,
+        max_pool=2,
+        nb_conv_per_level=1,
+        half_res: bool = False,
+    ):
         super().__init__()
 
         # ensure correct dimensionality
         ndims = len(inshape)
-        assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+        assert ndims in [1, 2, 3], (
+            "ndims should be one of 1, 2, or 3. found: %d" % ndims
+        )
 
         # cache some parameters
         self.half_res = half_res
@@ -99,9 +91,11 @@ class Unet3D(nn.Module):
             max_pool = [max_pool] * self.nb_levels
 
         # cache downsampling / upsampling operations
-        MaxPooling = getattr(nn, 'MaxPool%dd' % ndims)
+        MaxPooling = getattr(nn, "MaxPool%dd" % ndims)
         self.pooling = [MaxPooling(s) for s in max_pool]
-        self.upsampling = [nn.Upsample(scale_factor=s, mode='nearest') for s in max_pool]
+        self.upsampling = [
+            nn.Upsample(scale_factor=s, mode="nearest") for s in max_pool
+        ]
 
         # configure encoder (down-sampling path)
         prev_nf = infeats
@@ -162,6 +156,7 @@ class Unet3D(nn.Module):
 
         return x
 
+
 class ConvBlock(nn.Module):
     """
     Specific convolutional block followed by leakyrelu for unet.
@@ -170,7 +165,7 @@ class ConvBlock(nn.Module):
     def __init__(self, ndims, in_channels, out_channels, stride=1):
         super().__init__()
 
-        Conv = getattr(nn, 'Conv%dd' % ndims)
+        Conv = getattr(nn, "Conv%dd" % ndims)
         self.main = Conv(in_channels, out_channels, 3, stride, 1)
         self.activation = nn.LeakyReLU(0.2)
 
@@ -180,7 +175,7 @@ class ConvBlock(nn.Module):
         return out
 
 
-class SpatialTransformer(Module):
+class SpatialTransformer(nn.Module):
     """
     N-D Spatial Transformer
 
