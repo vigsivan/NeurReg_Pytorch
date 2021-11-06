@@ -32,7 +32,6 @@ import torch.nn.functional as F
 
 __all__ = ["SpatialTransformer", "RegistrationNetwork3D", "RegistrationSimulator3D"]
 
-
 class RegistrationNetwork3D(Module):
     """
     Default parameters are taken from the paper.
@@ -49,6 +48,7 @@ class RegistrationNetwork3D(Module):
         bottleneck_channels: List[int] = [32, 32],
         encoder_stride: int = 2,
     ):
+        super().__init__()
         encoder_channels = [self.dims, *encoder_channels]
         self.encoder_layers = ModuleList(
             [
@@ -236,6 +236,9 @@ class RegistrationSimulator3D:
             t2df.Execute(self.transform)
         )
         return self.displacement_field
+
+    def __call__(self, image: tio.ScalarImage) -> tio.Image:
+        return self.get_new_displacement_field(image)
 
     def __random_transform(self, image: tio.ScalarImage) -> sitk.Transform:
         """
