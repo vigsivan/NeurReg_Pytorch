@@ -155,7 +155,7 @@ batched_input = torch.cat((x1, x2), dim=0)
 #             in_channels=ic,
 #             out_channels=oc,
 #             kernel_size=kernel_size,
-#             stride=1,
+#             stride=2,
 #         )
 #         for ic, oc in zip(encoder_channels, encoder_channels[1:])
 #     ]
@@ -168,7 +168,7 @@ batched_input = torch.cat((x1, x2), dim=0)
 # bottleneck_channels = [encoder_channels[-1], *bottleneck_channels]
 # bottleneck = Sequential(
 #     *[
-#         Conv3d(in_channels=ic, out_channels=oc, kernel_size=kernel_size)
+#         Conv3d(in_channels=ic, out_channels=oc, kernel_size=kernel_size, padding=1)
 #         for ic, oc in zip(bottleneck_channels, bottleneck_channels[1:])
 #     ]
 # )
@@ -179,42 +179,47 @@ batched_input = torch.cat((x1, x2), dim=0)
 #
 # upsampling_layers = ModuleList(
 #     [
-#         ConvTranspose3d(in_channels=ic, out_channels=ic, kernel_size=kernel_size)
-#         for ic in [bottleneck_channels[-1], *decoder_channels[:-1]]
-#     ]
-# )
-
-# decoder_channels = [decoder_channels[0], *decoder_channels]
-# decoder_conv_layers = ModuleList(
-#     [
-#         Conv3d(in_channels=ic, out_channels=oc, kernel_size=kernel_size)
-#         for ic, oc in zip(decoder_channels, decoder_channels[1:])
+#         ConvTranspose3d(in_channels=64, out_channels=oc, kernel_size=kernel_size, stride=2)
+#         for oc in decoder_channels[:-1]
 #     ]
 # )
 #
-# output_conv_layer = Conv3d(
-#     in_channels=decoder_channels[-1], out_channels=dims, kernel_size=3
-# )
+# uinputs = [bottleneck_inputs[-1]]
+# for i, layer in enumerate(upsampling_layers):
+#     inp = torch.cat((uinputs[0], encoder_inputs[-1-i]),1)
+#     uinputs.append(layer(inp))
 #
-# M, S_M = [i for i in data["moving"].values()]
-# I0, S_0 = [i for i in data["transformed"].values()]
-# x = torch.cat((M, I0),1)
-# encoder_outs = [x]
-# for encoder in encoder_layers:
-#     encoder_outs.append(encoder(encoder_outs[-1]))
-#
-# encoder_outs = [encoder_layers[0](x)]
-# for i in range(1, len(encoder_layers)):
-#     x_act = F.leaky_relu(encoder_outs[-1], lrelu_slope)
-#     encoder_outs.append(encoder_layers[i](x_act))
-# decoder_input = bottleneck(encoder_outs[-1])
-# for eout, upsample, decoder_conv in zip(
-#     encoder_outs, upsampling_layers, decoder_conv_layers
-# ):
-#     out = upsample(decoder_input)
-#     out = torch.cat(eout, out)
-#     out = decoder_conv(out)
-#     decoder_input = F.leaky_relu(out, lrelu_slope)
-#
-# F_N = decoder_input  # final feature layer
-# output = output_conv_layer(decoder_input)
+# # decoder_channels = [decoder_channels[0], *decoder_channels]
+# # decoder_conv_layers = ModuleList(
+# #     [
+# #         Conv3d(in_channels=ic, out_channels=oc, kernel_size=kernel_size)
+# #         for ic, oc in zip(decoder_channels, decoder_channels[1:])
+# #     ]
+# # )
+# #
+# # output_conv_layer = Conv3d(
+# #     in_channels=decoder_channels[-1], out_channels=dims, kernel_size=3
+# # )
+# #
+# # M, S_M = [i for i in data["moving"].values()]
+# # I0, S_0 = [i for i in data["transformed"].values()]
+# # x = torch.cat((M, I0),1)
+# # encoder_outs = [x]
+# # for encoder in encoder_layers:
+# #     encoder_outs.append(encoder(encoder_outs[-1]))
+# #
+# # encoder_outs = [encoder_layers[0](x)]
+# # for i in range(1, len(encoder_layers)):
+# #     x_act = F.leaky_relu(encoder_outs[-1], lrelu_slope)
+# #     encoder_outs.append(encoder_layers[i](x_act))
+# # decoder_input = bottleneck(encoder_outs[-1])
+# # for eout, upsample, decoder_conv in zip(
+# #     encoder_outs, upsampling_layers, decoder_conv_layers
+# # ):
+# #     out = upsample(decoder_input)
+# #     out = torch.cat(eout, out)
+# #     out = decoder_conv(out)
+# #     decoder_input = F.leaky_relu(out, lrelu_slope)
+# #
+# # F_N = decoder_input  # final feature layer
+# # output = output_conv_layer(decoder_input)
