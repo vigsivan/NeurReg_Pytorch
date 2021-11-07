@@ -30,13 +30,14 @@ class NeurRegLoss(torch.nn.Module):
 
     def __call__(
         self,
-        registrations: Tuple[torch.Tensor, torch.Tensor],
-        images: Tuple[torch.Tensor, torch.Tensor],
-        segmentations: Tuple[torch.Tensor, torch.Tensor]
-        )->float:
-        return (registration_field_loss(*registrations)
-                + self.λ *  local_cross_correlation_loss3D(*images, self.window_size)
-                + self.β * tversky_loss2(*segmentations))
+        F_0, F_0g, I_0, I_0R, I_1, I_1R, S_0, S_0g, S_1, S_1g
+       )->torch.Tensor:
+        return (registration_field_loss(F_0, F_0g)
+                + self.λ *  (
+                    local_cross_correlation_loss3D(I_0, I_0R, self.window_size) +
+                    local_cross_correlation_loss3D(I_1, I_1R, self.window_size))
+                + self.β * (
+                    tversky_loss2(S_0, S_0g) + tversky_loss2(S_1, S_1g)))
 
 
 
@@ -47,7 +48,7 @@ def registration_field_loss(reg_gt: torch.Tensor, reg_pred: torch.Tensor)->float
     # reg_gt, reg_pred = reg_gt.squeeze(), reg_pred.squeeze()
     assert reg_gt.shape == reg_pred.shape
 
-    Ω = torch.prod(torch.tensor(reg_gt.shape)).item()
+    Ω = torch.prod(torch.tensor(reg_gt.shape))
     return (1 / Ω) * torch.norm(reg_pred - reg_gt)
 
 
@@ -64,20 +65,20 @@ def local_cross_correlation_loss3D(
     """
     assert image_gt.shape == image_pred.shape
 
-    Ω = torch.prod(torch.tensor(image_gt.shape)).item()
+    Ω = torch.prod(torch.tensor(image_gt.shape))
     conv_mag = torch.prod(torch.Tensor(window_size)).item()
     kernel = torch.full((1,1,*window_size), fill_value=(1/conv_mag))
 
-    gt_mean = F.conv3d(image_gt, kernel)
-    pred_mean = F.conv3d(image_pred, kernel)
+    gt_mean = F.conv3d(image_gt, kernel, padding=2)
+    pred_mean = F.conv3d(image_pred, kernel, padding=2)
 
     # define constants for shorter formula
     # im_d = image diff
     # p_d  = prediction diff
     im_d, p_d = image_gt-gt_mean, image_pred-pred_mean
 
-    numerator = torch.square(torch.sum((im_d)*(p_d))).item()
-    denominator = torch.sum(torch.square(im_d))*torch.sum(torch.square(p_d)).item()
+    numerator = torch.square(torch.sum((im_d)*(p_d)))
+    denominator = torch.sum(torch.square(im_d))*torch.sum(torch.square(p_d))
     cross_corr = -(1/Ω) * (numerator/denominator)
 
     return cross_corr

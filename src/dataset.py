@@ -2,7 +2,7 @@ import os
 import random
 import torchio as tio
 import torch
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple, Union
 from pathlib import Path
 
 from components import *
@@ -29,6 +29,8 @@ class ImageDataset(Dataset):
             else RegistrationSimulator3D()
         )
 
+        self.stn = SpatialTransformer(target_shape)
+
         images = os.listdir(path_to_images)
         segmentations = os.listdir(path_to_segmentations)
 
@@ -46,25 +48,10 @@ class ImageDataset(Dataset):
     def __len__(self):
         return len(self.images)
 
-    def __get_deformation_field(self, index: int):
-        moving_image_file = self.images[index]
-        moving_image_tio = tio.ScalarImage(self.path_to_images / moving_image_file)
-        deformation_field = self.registration_simulator(moving_image_tio).data
+    def __get_deformation_field(self, image: tio.ScalarImage):
+        deformation_field = self.registration_simulator(image).data
         return deformation_field.unsqueeze(0).float()
 
-    def __get_spatial_transformer(self, index: int, deformation_field: torch.Tensor):
-        moving_image_file = self.images[index]
-        moving_image_tio = tio.ScalarImage(self.path_to_images / moving_image_file)
-        stn = SpatialTransformer(moving_image_tio.data.squeeze().shape)
-
-        tsfm = lambda x: stn(
-            x.squeeze().unsqueeze(0).unsqueeze(0).float(), deformation_field
-        )
-        return tsfm
-
-    def __pad(self, image: torch.Tensor) -> torch.Tensor:
-        padded = self.pad_fn(image.squeeze().unsqueeze(0)).unsqueeze(0).float()
-        return padded
 
     def __getitem__(self, index: int):
         data: Dict[str, Dict[str, torch.Tensor]] = {
@@ -73,6 +60,8 @@ class ImageDataset(Dataset):
             "transformed": {},
         }
 
+        pad = lambda x: self.pad_fn(x.squeeze().unsqueeze(0)).float()
+
         moving_image_file, moving_seg_file = self.images[index], self.segs[index]
         moving_image_tio = tio.ScalarImage(self.path_to_images / moving_image_file)
         moving_seg_tio = tio.LabelMap(self.path_to_segmentations / moving_seg_file)
@@ -80,19 +69,23 @@ class ImageDataset(Dataset):
         randindex = random.randint(0, len(self.images) - 1)
         image_file, seg_file = self.images[randindex], self.segs[randindex]
 
-        deformation_field = self.__get_deformation_field(index)
-        stn = self.__get_spatial_transformer(index, deformation_field)
+        deformation_field = self.__get_deformation_field(moving_image_tio)
+        deformation_field = self.pad_fn(deformation_field.squeeze()).unsqueeze(0).float()
+
+        tsfm = lambda x: self.stn(
+            x.squeeze().unsqueeze(0).unsqueeze(0).float(), deformation_field
+        )
 
         # Expected format of the images is in B,C,D,W,H format
         # the pad function does all of the squeezing/unsqueezing necessary for 3D inputs
-        moving_image = self.__pad(moving_image_tio.data)
-        moving_seg = self.__pad(moving_seg_tio.data)
-        transformed_image = self.__pad(stn(moving_image))
-        transformed_seg = self.__pad(stn(moving_seg))
-        another_image = self.__pad(
+        moving_image = pad(moving_image_tio.data)
+        moving_seg = pad(moving_seg_tio.data)
+        transformed_image = pad(tsfm(moving_image))
+        transformed_seg = pad(tsfm(moving_seg))
+        another_image = pad(
             tio.ScalarImage(self.path_to_images / image_file).data
         )
-        another_seg = self.__pad(
+        another_seg = pad(
             tio.LabelMap(self.path_to_segmentations / seg_file).data
         )
 
@@ -101,6 +94,7 @@ class ImageDataset(Dataset):
 
         data["transformed"]["image"] = transformed_image
         data["transformed"]["seg"] = transformed_seg
+        data["transformed"]["field"] = deformation_field
 
         data["another"]["image"] = another_image
         data["another"]["seg"] = another_seg
