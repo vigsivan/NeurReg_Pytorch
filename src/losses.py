@@ -90,4 +90,4 @@ def tversky_loss2(
     """
     Computes the tversky loss for the 2-class case
     """
-    return -1/2 * torch.sum((2*seg_gt*seg_pred)/(seg_gt+seg_pred))
+    return -1/2 * torch.sum(2*seg_gt*seg_pred)/torch.sum(seg_gt+seg_pred)
