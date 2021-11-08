@@ -87,12 +87,13 @@ def main():
                     data["transform"][i] = data["transform"][i].cuda()
                     data["transform"][i] = data["transform"][i].cuda()
 
-            elastic_field = F.conv3d(data["transform"]["elastic_offset"].unsqueeze(0),
-                                     data["transform"]["smoothing_kernel"],
+            elastic_field = F.conv3d(data["transform"]["elastic_offset"].squeeze().unsqueeze(0),
+                                     data["transform"]["smoothing_kernel"].squeeze(),
                                      padding = ceil(data["transform"]["smoothing_kernel"]/2))
 
             displacement_field = elastic_field + data["transform"]["affine_field"]
             transformed_image = stn(data["moving"]["image"], displacement_field)
+            transformed_seg = stn(data["moving"]["seg"], displacement_field)
 
             x1 = torch.cat((data["moving"]["image"], transformed_image), dim=1)
             x2 = torch.cat((data["moving"]["image"], data["another"]["image"]), dim=1)
@@ -102,14 +103,14 @@ def main():
             batched_fields = to_flow_field(last_layer)
 
             # Using notation from the paper
-            F_0g = data["transformed"]["field"].squeeze().unsqueeze(0)
+            F_0g = displacement_field.squeeze().unsqueeze(0)
             F_0 = batched_fields[0, :, :, :, :].unsqueeze(0)
             F_1 = batched_fields[1, :, :, :, :].unsqueeze(0)
-            I_0 = data["transformed"]["image"]
+            I_0 = transformed_image
             I_1 = data["another"]["image"]
             I_0R = stn(data["moving"]["image"], F_0)
             I_1R = stn(data["moving"]["image"], F_1)
-            S_0g = data["transformed"]["seg"]
+            S_0g = transformed_seg
             S_0 = stn(data["moving"]["seg"], F_0)
             S_1 = stn(data["moving"]["seg"], F_1)
             S_1g = stn(data["another"]["seg"], F_1)
