@@ -2,24 +2,21 @@
 Trains the NeurReg model
 """
 
+from math import ceil
 from tqdm import trange
 from dataset import ImageDataset
 from components import *
 from typing import Dict
 from torch.nn import Conv3d, Sequential, Softmax, Module
+import torch.nn.functional as F
 import params
 import torch
 
 from losses import NeurRegLoss
 from torch.utils.data import DataLoader
 
-
-# FIXME: get rid of magic numbers
-
-
 def get_dataloader() -> DataLoader:
     dataset = ImageDataset(
-        params.use_cuda,
         params.path_to_images,
         params.path_to_segs,
         params.matching_fn,
@@ -81,18 +78,25 @@ def main():
             optimizer.zero_grad()
 
             if params.use_cuda:
-                for category in ("moving", "transformed", "another"):
-                    for typ in ("image", "seg"):
-                        data[category][typ] = data[category][typ].cuda()
-                    if category == "transformed":
-                        data[category]["field"] = data[category]["field"].cuda()
+                for i in ("moving", "another"):
+                    for j in ("image", "seg"):
+                        data[i][j] = data[i][j].cuda()
 
-            x1 = torch.cat(
-                (data["moving"]["image"], data["transformed"]["image"]), dim=1
-            )
+                for i in ("affine_field", "elastic_offset", "smoothing_kernel"):
+                    data["transform"][i] = data["transform"][i].cuda()
+                    data["transform"][i] = data["transform"][i].cuda()
+                    data["transform"][i] = data["transform"][i].cuda()
+
+            elastic_field = F.conv3d(data["transform"]["elastic_offset"].unsqueeze(0),
+                                     data["transform"]["smoothing_kernel"],
+                                     padding = ceil(data["transform"]["smoothing_kernel"]/2))
+
+            displacement_field = elastic_field + data["transform"]["affine_field"]
+            transformed_image = stn(data["moving"]["image"], displacement_field)
+
+            x1 = torch.cat((data["moving"]["image"], transformed_image), dim=1)
             x2 = torch.cat((data["moving"]["image"], data["another"]["image"]), dim=1)
             batched_images = torch.cat((x1, x2), dim=0)
-
             last_layer = N(batched_images)
             last_layer0 = last_layer[0, :, :, :, :].unsqueeze(0)
             batched_fields = to_flow_field(last_layer)
@@ -125,7 +129,6 @@ def main():
             )
             with open(params.step_loss_file, "a") as f:
                 f.write(f"step={step},loss={loss.item()};")
-
 
 if __name__ == "__main__":
     main()
