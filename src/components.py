@@ -241,8 +241,8 @@ class RegistrationSimulator3D:
         scale_max: Union[float, Tuple[float, float, float]] = 1.25,
         translation_factor: Union[float, Tuple[float, float, float]] = 0.02,
         offset_gaussian_std_max: int = 1000,
-        smoothing_gaussian_std_min: float = 10,
-        smoothing_gaussian_std_max: float = 13,
+        smoothing_gaussian_std_min: int = 11, #FIXME: modified from the paper
+        smoothing_gaussian_std_max: int = 13,
     ):
 
         super().__init__()
@@ -310,11 +310,10 @@ class RegistrationSimulator3D:
 
         elastic_offset_std = U(0, self.offset_gaussian_std_max)
         elastic_offset = torch.empty_like(affine_field).normal_(0, elastic_offset_std)
-        smoothing_std = int(U(
-            self.smoothing_gaussian_std_min, self.smoothing_gaussian_std_max
-        ))
-        kernel_size = 2 * smoothing_std  # FIXME: kernel size not specified in paper?
-        kernel_window = np.zeros((3, 3, kernel_size, kernel_size, kernel_size))
+        smoothing_std = random.choice((self.smoothing_gaussian_std_min,
+                                    self.smoothing_gaussian_std_max))
+        kernel_size = smoothing_std  # FIXME: kernel size not specified in paper?
+        kernel_window = np.zeros((1, 1, kernel_size, kernel_size, kernel_size))
         smoothing_filter = torch.from_numpy(
             gaussian_filter(kernel_window, smoothing_std)
         )
@@ -334,6 +333,3 @@ if __name__ == "__main__":
     image = tio.ScalarImage("../data/test_image.nii.gz")
     simulator = RegistrationSimulator3D()
     affine_tensor, elastic_offset, smoothing_kernel = simulator(image)
-    # NOTE: the following is too expensive to compute elastic_offset on CPU
-    # elastic_field = F.conv3d(elastic_offset.unsqueeze(0), smoothing_kernel)
-    # displacement_field = affine_tensor + elastic_field
