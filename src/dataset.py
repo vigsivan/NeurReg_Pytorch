@@ -8,11 +8,13 @@ from pathlib import Path
 from components import *
 from torch.utils.data import Dataset
 
+
 class ImageDataset(Dataset):
     """ """
 
     def __init__(
         self,
+        use_cuda: bool,
         path_to_images: Path,
         path_to_segmentations: Path,
         matching_fn: Callable,
@@ -26,7 +28,7 @@ class ImageDataset(Dataset):
         self.registration_simulator = (
             registration_simulator
             if registration_simulator
-            else RegistrationSimulator3D()
+            else RegistrationSimulator3D(use_cuda)
         )
 
         self.stn = SpatialTransformer(target_shape)
@@ -52,7 +54,6 @@ class ImageDataset(Dataset):
         deformation_field = self.registration_simulator(image).data
         return deformation_field.unsqueeze(0).float()
 
-
     def __getitem__(self, index: int):
         data: Dict[str, Dict[str, torch.Tensor]] = {
             "moving": {},
@@ -70,7 +71,9 @@ class ImageDataset(Dataset):
         image_file, seg_file = self.images[randindex], self.segs[randindex]
 
         deformation_field = self.__get_deformation_field(moving_image_tio)
-        deformation_field = self.pad_fn(deformation_field.squeeze()).unsqueeze(0).float()
+        deformation_field = (
+            self.pad_fn(deformation_field.squeeze()).unsqueeze(0).float()
+        )
 
         tsfm = lambda x: self.stn(
             x.squeeze().unsqueeze(0).unsqueeze(0).float(), deformation_field
@@ -82,12 +85,8 @@ class ImageDataset(Dataset):
         moving_seg = pad(moving_seg_tio.data)
         transformed_image = pad(tsfm(moving_image))
         transformed_seg = pad(tsfm(moving_seg))
-        another_image = pad(
-            tio.ScalarImage(self.path_to_images / image_file).data
-        )
-        another_seg = pad(
-            tio.LabelMap(self.path_to_segmentations / seg_file).data
-        )
+        another_image = pad(tio.ScalarImage(self.path_to_images / image_file).data)
+        another_seg = pad(tio.LabelMap(self.path_to_segmentations / seg_file).data)
 
         data["moving"]["image"] = moving_image
         data["moving"]["seg"] = moving_seg

@@ -6,7 +6,7 @@ use_cuda = False
 
 #########################
 # How much should be used for training
-train_proportion = 1.
+train_proportion = 1.0
 
 #########################
 # Spatial shape of each tensor that goes throgh the network
@@ -25,7 +25,7 @@ matching_fn = lambda x: x
 
 #########################
 # Number of workers
-num_workers=3
+num_workers = 3
 
 #########################
 # Loss params weighting
@@ -41,7 +41,7 @@ lr = 1e-3
 
 #########################
 # Path to save stuff
-savedir=Path(".")
-checkpoint = savedir/"checkpoint.pt"
-step_loss_file=savedir/"step_loss.txt"
-epochs_per_save=2
+savedir = Path(".")
+checkpoint = savedir / "checkpoint.pt"
+step_loss_file = savedir / "step_loss.txt"
+epochs_per_save = 2

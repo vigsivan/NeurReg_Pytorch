@@ -16,8 +16,10 @@ from torch.utils.data import DataLoader
 
 # FIXME: get rid of magic numbers
 
+
 def get_dataloader() -> DataLoader:
     dataset = ImageDataset(
+        params.use_cuda,
         params.path_to_images,
         params.path_to_segs,
         params.matching_fn,
@@ -32,7 +34,9 @@ def get_dataloader() -> DataLoader:
 def get_models() -> Dict[str, Module]:
 
     N = Unet3D(inshape=params.target_shape)
-    loss_func = NeurRegLoss(params.cross_corr_loss_weight, params.seg_loss_weight)
+    loss_func = NeurRegLoss(
+        params.cross_corr_loss_weight, params.seg_loss_weight, use_cuda=params.use_cuda
+    )
     stn = SpatialTransformer(params.target_shape)
 
     to_flow_field = Conv3d(16, 3, 3, padding=1)
@@ -121,6 +125,7 @@ def main():
             )
             with open(params.step_loss_file, "a") as f:
                 f.write(f"step={step},loss={loss.item()};")
+
 
 if __name__ == "__main__":
     main()
