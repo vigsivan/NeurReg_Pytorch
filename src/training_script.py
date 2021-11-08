@@ -87,9 +87,10 @@ def main():
                     data["transform"][i] = data["transform"][i].cuda()
                     data["transform"][i] = data["transform"][i].cuda()
 
+            padding = (data["transform"]["smoothing_kernel"][-1]-1)/2
             elastic_field = F.conv3d(data["transform"]["elastic_offset"].squeeze().unsqueeze(0),
                                      data["transform"]["smoothing_kernel"].squeeze(),
-                                     padding = ceil(data["transform"]["smoothing_kernel"]/2))
+                                     padding = padding)
 
             displacement_field = elastic_field + data["transform"]["affine_field"]
             transformed_image = stn(data["moving"]["image"], displacement_field)
