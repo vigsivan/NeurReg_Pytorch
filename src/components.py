@@ -313,7 +313,7 @@ class RegistrationSimulator3D:
         smoothing_std = random.choice((self.smoothing_gaussian_std_min,
                                     self.smoothing_gaussian_std_max))
         kernel_size = smoothing_std  # FIXME: kernel size not specified in paper?
-        kernel_window = np.zeros((1, 1, kernel_size, kernel_size, kernel_size))
+        kernel_window = np.zeros((3, 3, kernel_size, kernel_size, kernel_size))
         smoothing_filter = torch.from_numpy(
             gaussian_filter(kernel_window, smoothing_std)
         )
