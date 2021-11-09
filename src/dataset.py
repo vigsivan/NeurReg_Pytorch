@@ -72,15 +72,13 @@ class ImageDataset(Dataset):
         another_image = pad(tio.ScalarImage(self.path_to_images / image_file).data)
         another_seg = pad(tio.LabelMap(self.path_to_segmentations / seg_file).data)
 
-        affine, elastic, smoothing = self.registration_simulator(
+        displacement_field = self.registration_simulator(
         tio.ScalarImage(tensor=moving_image))
 
         data["moving"]["image"] = moving_image
         data["moving"]["seg"] = moving_seg
 
-        data["transform"]["affine_field"] = affine
-        data["transform"]["elastic_offset"] = elastic
-        data["transform"]["smoothing_kernel"] = smoothing
+        data["transform"]["displacement_field"] = displacement_field
 
         data["another"]["image"] = another_image
         data["another"]["seg"] = another_seg

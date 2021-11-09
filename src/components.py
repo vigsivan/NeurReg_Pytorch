@@ -275,7 +275,7 @@ class RegistrationSimulator3D:
 
     def generate_random_transform_tensors(
         self, image: tio.ScalarImage
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) ->  torch.Tensor:
         """
         Generates new transforms
         """
@@ -298,32 +298,30 @@ class RegistrationSimulator3D:
             tuple([image.spatial_shape[i] * tf for i, tf in enumerate(tfs)])
         )
 
+        elastic_cps = tio.RandomElasticDeformation.get_params(
+            num_control_points=(7,7,7),
+            max_displacement=translation,
+            num_locked_borders=2,
+        )
+        elastic = tio.ElasticDeformation(
+            control_points=elastic_cps, max_displacement=translation
+        )
+        elastic_sitk = elastic.get_bspline_transform(image.as_sitk())
+        affine = tio.Affine(
+                    scales=scales, degrees=rotations, translation=translation
+                 ).get_affine_transform(image)
+
+        composite = sitk.CompositeTransform([elastic_sitk, affine])
+
         t2df = sitk.TransformToDisplacementFieldFilter()
         t2df.SetReferenceImage(image.as_sitk())
-        affine_field = tio.ScalarImage.from_sitk(
-            t2df.Execute(
-                tio.Affine(
-                    scales=scales, degrees=rotations, translation=translation
-                ).get_affine_transform(image)
-            )
-        ).data
+        displacement_field =  t2df.Execute(composite)
+        return torch.from_numpy(displacement_field)
 
-        elastic_offset_std = U(0, self.offset_gaussian_std_max)
-        elastic_offset = torch.empty_like(affine_field).normal_(0, elastic_offset_std)
-        smoothing_std = random.choice((self.smoothing_gaussian_std_min,
-                                    self.smoothing_gaussian_std_max))
-
-        kernel_size = self.smoothing_gaussian_std_max  # FIXME: kernel size not specified in paper?
-        kernel_window = np.zeros((3, 3, kernel_size, kernel_size, kernel_size))
-        smoothing_filter = torch.from_numpy(
-            gaussian_filter(kernel_window, smoothing_std)
-        )
-
-        return affine_field, elastic_offset, smoothing_filter
 
     def __call__(
         self, image: tio.ScalarImage
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) ->  torch.Tensor:
         return self.generate_random_transform_tensors(image)
 
 

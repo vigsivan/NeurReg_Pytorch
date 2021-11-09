@@ -7,7 +7,6 @@ from dataset import ImageDataset
 from components import *
 from typing import Dict
 from torch.nn import Conv3d, Sequential, Softmax, Module
-import torch.nn.functional as F
 import params
 import torch
 
@@ -73,7 +72,6 @@ def main():
     epochs = params.epochs
     for epoch in trange(epochs):
         for step, data in tqdm(enumerate(dataloader)):
-            batch_size  = data["moving"]["image"].shape[0]
             optimizer.zero_grad()
 
             if params.use_cuda:
@@ -81,25 +79,13 @@ def main():
                     for j in ("image", "seg"):
                         data[i][j] = data[i][j].cuda()
 
-                for i in ("affine_field", "elastic_offset", "smoothing_kernel"):
-                    data["transform"][i] = data["transform"][i].cuda()
-                    data["transform"][i] = data["transform"][i].cuda()
-                    data["transform"][i] = data["transform"][i].cuda()
-
-            padding = (data["transform"]["smoothing_kernel"].shape[-1]-1)//2
+                data["transform"] = data["displacement_field"]
 
             #
             # Only generate elastic field on CUDA (takes too long/crashes CPU)
             #
 
-            if params.use_cuda:
-                elastic_offset = data["transform"]["elastic_offset"]
-                smoothing = data["transform"]["smoothing_kernel"][0,:,:,:,:,:]
-                elastic_field = F.conv3d(elastic_offset, smoothing, padding = padding)
-                displacement_field = elastic_field + data["transform"]["affine_field"]
-            else:
-                displacement_field = data["transform"]["affine_field"]
-
+            displacement_field = data["transform"]["displacement_field"]
             displacement_field = displacement_field.float()
             transformed_image = stn(data["moving"]["image"], displacement_field)
             transformed_seg = stn(data["moving"]["seg"], displacement_field)
@@ -116,7 +102,7 @@ def main():
             # Compute loss. Because we have a lot of variables, we'll use
             # the notation from the paper
             #########################
-            F_0g = displacement_field.squeeze().unsqueeze(0)
+            F_0g = displacement_field
             I_0 = transformed_image
             I_1 = data["another"]["image"]
             I_0R = stn(data["moving"]["image"], F_0)
