@@ -11,8 +11,8 @@ from torch.utils.data import Dataset
 
 
 class ImageDataset(Dataset):
-    """ """
-
+    """
+    """
     def __init__(
         self,
         path_to_images: Path,
@@ -65,9 +65,6 @@ class ImageDataset(Dataset):
         randindex = random.randint(0, len(self.images) - 1)
         image_file, seg_file = self.images[randindex], self.segs[randindex]
 
-        affine, elastic, smoothing = self.registration_simulator(
-                tio.ScalarImage(tensor=moving_image))
-
         # Expected format of the images is in B,C,D,W,H format
         # the pad function does all of the squeezing/unsqueezing necessary for 3D inputs
         moving_image = pad(moving_image_tio.data)
@@ -75,8 +72,8 @@ class ImageDataset(Dataset):
         another_image = pad(tio.ScalarImage(self.path_to_images / image_file).data)
         another_seg = pad(tio.LabelMap(self.path_to_segmentations / seg_file).data)
 
-        affine = pad(affine)
-        elastic = pad(elastic)
+        affine, elastic, smoothing = self.registration_simulator(
+        tio.ScalarImage(tensor=moving_image))
 
         data["moving"]["image"] = moving_image
         data["moving"]["seg"] = moving_seg
@@ -97,4 +94,4 @@ if __name__ == "__main__":
         params.matching_fn,
         target_shape=params.target_shape,
     )
-    random.choice(dataset)
+    data = random.choice(dataset)

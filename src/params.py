@@ -2,6 +2,7 @@ from pathlib import Path
 
 #########################
 # Set to True when training
+# FIXME: better to use device rather than boolean (more clean logic)
 use_cuda = False
 
 #########################

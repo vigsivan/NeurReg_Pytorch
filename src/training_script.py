@@ -2,8 +2,7 @@
 Trains the NeurReg model
 """
 
-from math import ceil
-from tqdm import trange
+from tqdm import trange, tqdm
 from dataset import ImageDataset
 from components import *
 from typing import Dict
@@ -72,7 +71,7 @@ def main():
 
     epochs = params.epochs
     for epoch in trange(epochs):
-        for step, data in enumerate(dataloader):
+        for step, data in tqdm(enumerate(dataloader)):
             if step == 1:
                 break
             optimizer.zero_grad()
@@ -87,15 +86,25 @@ def main():
                     data["transform"][i] = data["transform"][i].cuda()
                     data["transform"][i] = data["transform"][i].cuda()
 
-            padding = (data["transform"]["smoothing_kernel"][-1]-1)/2
-            elastic_field = F.conv3d(data["transform"]["elastic_offset"].squeeze().unsqueeze(0),
-                                     data["transform"]["smoothing_kernel"].squeeze(),
-                                     padding = padding)
+            padding = (data["transform"]["smoothing_kernel"].shape[-1]-1)/2
 
-            displacement_field = elastic_field + data["transform"]["affine_field"]
+            #
+            # Only generate elastic field on CUDA (crashes CPU)
+            #
+
+            if params.use_cuda:
+                elastic_field = F.conv3d(data["transform"]["elastic_offset"].squeeze().unsqueeze(0),
+                                         data["transform"]["smoothing_kernel"].squeeze(),
+                                         padding = padding)
+
+                displacement_field = elastic_field + data["transform"]["affine_field"]
+            else:
+                displacement_field = data["transform"]["affine_field"]
+
             transformed_image = stn(data["moving"]["image"], displacement_field)
             transformed_seg = stn(data["moving"]["seg"], displacement_field)
 
+            # Pass images through network as a single batch
             x1 = torch.cat((data["moving"]["image"], transformed_image), dim=1)
             x2 = torch.cat((data["moving"]["image"], data["another"]["image"]), dim=1)
             batched_images = torch.cat((x1, x2), dim=0)
@@ -103,7 +112,10 @@ def main():
             last_layer0 = last_layer[0, :, :, :, :].unsqueeze(0)
             batched_fields = to_flow_field(last_layer)
 
-            # Using notation from the paper
+            #########################
+            # Compute loss. Because we have a lot of variables, we'll use
+            # the notation from the paper
+            #########################
             F_0g = displacement_field.squeeze().unsqueeze(0)
             F_0 = batched_fields[0, :, :, :, :].unsqueeze(0)
             F_1 = batched_fields[1, :, :, :, :].unsqueeze(0)
@@ -120,6 +132,7 @@ def main():
             loss = loss_func(F_0, F_0g, I_0, I_0R, I_1, I_1R, S_0feat, S_0g, S_1, S_1g)
             loss.backward()
             optimizer.step()
+
         if epoch % params.epochs_per_save == 0:
             torch.save(
                 {
