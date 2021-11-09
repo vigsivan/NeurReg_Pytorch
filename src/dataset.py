@@ -7,7 +7,7 @@ from typing import Callable, Dict, Optional, Tuple
 from pathlib import Path
 
 from components import *
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 
 
 class ImageDataset(Dataset):
@@ -86,6 +86,7 @@ class ImageDataset(Dataset):
         data["another"]["seg"] = another_seg
 
         return data
+        # return moving_image, moving_seg, another_image, another_seg, affine, elastic, smoothing
 
 if __name__ == "__main__":
     dataset = ImageDataset(
@@ -94,4 +95,5 @@ if __name__ == "__main__":
         params.matching_fn,
         target_shape=params.target_shape,
     )
-    data = random.choice(dataset)
+    dataloader = DataLoader(dataset, batch_size=6)
+    data = next(iter(dataloader))

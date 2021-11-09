@@ -192,7 +192,7 @@ class SpatialTransformer(nn.Module):
 
         # create sampling grid
         vectors = [torch.arange(0, s) for s in size]
-        grids = torch.meshgrid(vectors)
+        grids = torch.meshgrid(vectors, indexing='ij')
         grid = torch.stack(grids)
         grid = torch.unsqueeze(grid, 0)
         grid = grid.float()
@@ -241,7 +241,7 @@ class RegistrationSimulator3D:
         scale_max: Union[float, Tuple[float, float, float]] = 1.25,
         translation_factor: Union[float, Tuple[float, float, float]] = 0.02,
         offset_gaussian_std_max: int = 1000,
-        smoothing_gaussian_std_min: int = 11, #FIXME: modified from the paper
+        smoothing_gaussian_std_min: int = 10,
         smoothing_gaussian_std_max: int = 13,
     ):
 
@@ -312,7 +312,8 @@ class RegistrationSimulator3D:
         elastic_offset = torch.empty_like(affine_field).normal_(0, elastic_offset_std)
         smoothing_std = random.choice((self.smoothing_gaussian_std_min,
                                     self.smoothing_gaussian_std_max))
-        kernel_size = smoothing_std  # FIXME: kernel size not specified in paper?
+
+        kernel_size = self.smoothing_gaussian_std_max  # FIXME: kernel size not specified in paper?
         kernel_window = np.zeros((3, 3, kernel_size, kernel_size, kernel_size))
         smoothing_filter = torch.from_numpy(
             gaussian_filter(kernel_window, smoothing_std)

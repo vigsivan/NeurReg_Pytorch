@@ -42,6 +42,7 @@ def get_models() -> Dict[str, Module]:
         N = N.cuda()
         to_flow_field = to_flow_field.cuda()
         conv_w_softmax = conv_w_softmax.cuda()
+        stn.cuda()
 
     return {
         "N": N,
@@ -72,8 +73,7 @@ def main():
     epochs = params.epochs
     for epoch in trange(epochs):
         for step, data in tqdm(enumerate(dataloader)):
-            if step == 1:
-                break
+            batch_size  = data["moving"]["image"].shape[0]
             optimizer.zero_grad()
 
             if params.use_cuda:
@@ -86,39 +86,37 @@ def main():
                     data["transform"][i] = data["transform"][i].cuda()
                     data["transform"][i] = data["transform"][i].cuda()
 
-            padding = (data["transform"]["smoothing_kernel"].shape[-1]-1)/2
+            padding = (data["transform"]["smoothing_kernel"].shape[-1]-1)//2
 
             #
-            # Only generate elastic field on CUDA (crashes CPU)
+            # Only generate elastic field on CUDA (takes too long/crashes CPU)
             #
 
             if params.use_cuda:
-                elastic_field = F.conv3d(data["transform"]["elastic_offset"].squeeze().unsqueeze(0),
-                                         data["transform"]["smoothing_kernel"].squeeze(),
-                                         padding = padding)
-
+                elastic_offset = data["transform"]["elastic_offset"]
+                smoothing = data["transform"]["smoothing_kernel"][0,:,:,:,:,:]
+                elastic_field = F.conv3d(elastic_offset, smoothing, padding = padding)
                 displacement_field = elastic_field + data["transform"]["affine_field"]
             else:
                 displacement_field = data["transform"]["affine_field"]
 
+            displacement_field = displacement_field.float()
             transformed_image = stn(data["moving"]["image"], displacement_field)
             transformed_seg = stn(data["moving"]["seg"], displacement_field)
 
             # Pass images through network as a single batch
             x1 = torch.cat((data["moving"]["image"], transformed_image), dim=1)
             x2 = torch.cat((data["moving"]["image"], data["another"]["image"]), dim=1)
-            batched_images = torch.cat((x1, x2), dim=0)
-            last_layer = N(batched_images)
-            last_layer0 = last_layer[0, :, :, :, :].unsqueeze(0)
-            batched_fields = to_flow_field(last_layer)
+
+            last_layer = N(x1)
+            F_0 = to_flow_field(last_layer)
+            F_1 = to_flow_field(N(x2))
 
             #########################
             # Compute loss. Because we have a lot of variables, we'll use
             # the notation from the paper
             #########################
             F_0g = displacement_field.squeeze().unsqueeze(0)
-            F_0 = batched_fields[0, :, :, :, :].unsqueeze(0)
-            F_1 = batched_fields[1, :, :, :, :].unsqueeze(0)
             I_0 = transformed_image
             I_1 = data["another"]["image"]
             I_0R = stn(data["moving"]["image"], F_0)
@@ -127,7 +125,7 @@ def main():
             S_0 = stn(data["moving"]["seg"], F_0)
             S_1 = stn(data["moving"]["seg"], F_1)
             S_1g = stn(data["another"]["seg"], F_1)
-            boosted = torch.cat((last_layer0, S_0), 1)
+            boosted = torch.cat((last_layer, S_0), 1)
             S_0feat = conv_w_softmax(boosted)
             loss = loss_func(F_0, F_0g, I_0, I_0R, I_1, I_1R, S_0feat, S_0g, S_1, S_1g)
             loss.backward()
