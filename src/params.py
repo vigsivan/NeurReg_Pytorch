@@ -7,7 +7,7 @@ class CPU_CONFIG:
 	#########################
 	# Set to True when training
 	# FIXME: better to use device rather than boolean (more clean logic)
-    use_cuda = False
+    device="cpu"
 
 	#########################
 	# How much should be used for training
@@ -38,7 +38,7 @@ class CPU_CONFIG:
 
 	#########################
 	# Number of epochs
-    epochs = 1000
+    epochs = 1
 
 	#########################
 	# Number of epochs
@@ -56,7 +56,8 @@ class SLURM_CONFIG:
 	#########################
 	# Set to True when training
 	# FIXME: better to use device rather than boolean (more clean logic)
-    use_cuda = False
+    device = "cuda"
+    # use_cuda = False
 
 	#########################
 	# How much should be used for training
@@ -68,13 +69,10 @@ class SLURM_CONFIG:
 
 	#########################
 	# Path to the data
-    slurm_dir = os.getenv("$SLURM_TMPDIR")
-    if slurm_dir is None:
-        raise Exception("SLURM_TMPDIR is not defined")
+    slurm_dir = str(os.getenv("$SLURM_TMPDIR"))
     data_root_dir = Path(slurm_dir) / "/Task04_Hippocampus/"
     path_to_images = data_root_dir / "imagesTr/"
     path_to_segs = data_root_dir / "labelsTr/"
-
 
 	#########################
 	# Function for matching image and seg files
