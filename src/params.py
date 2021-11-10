@@ -1,48 +1,104 @@
+import os
+from dataclasses import dataclass
 from pathlib import Path
 
-#########################
-# Set to True when training
-# FIXME: better to use device rather than boolean (more clean logic)
-use_cuda = False
+@dataclass
+class CPU_CONFIG:
+	#########################
+	# Set to True when training
+	# FIXME: better to use device rather than boolean (more clean logic)
+    use_cuda = False
 
-#########################
-# How much should be used for training
-train_proportion = 1.0
+	#########################
+	# How much should be used for training
+    train_proportion = 1.0
 
-#########################
-# Spatial shape of each tensor that goes throgh the network
-target_shape = (128, 128, 128)
+	#########################
+	# Spatial shape of each tensor that goes throgh the network
+    target_shape = (128, 128, 128)
 
-#########################
-# Path to the data
-data_root_dir = Path("/Volumes/Untitled/Task04_Hippocampus/")
-path_to_images = data_root_dir / "imagesTr/"
-path_to_segs = data_root_dir / "labelsTr/"
+	#########################
+	# Path to the data
+    data_root_dir = Path("/Volumes/Untitled/Task04_Hippocampus/")
+    path_to_images = data_root_dir / "imagesTr/"
+    path_to_segs = data_root_dir / "labelsTr/"
 
 
-#########################
-# Function for matching image and seg files
-matching_fn = lambda x: x
+	#########################
+	# Function for matching image and seg files
+    matching_fn = lambda x: x
 
-#########################
-# Number of workers
-num_workers = 3
+	#########################
+	# Number of workers
+    num_workers = 3
 
-#########################
-# Loss params weighting
-cross_corr_loss_weight, seg_loss_weight = 10, 10
+	#########################
+	# Loss params weighting
+    cross_corr_loss_weight, seg_loss_weight = 10, 10
 
-#########################
-# Number of epochs
-epochs = 1000
+	#########################
+	# Number of epochs
+    epochs = 1000
 
-#########################
-# Number of epochs
-lr = 1e-3
+	#########################
+	# Number of epochs
+    lr = 1e-3
 
-#########################
-# Path to save stuff
-savedir = Path(".")
-checkpoint = savedir / "checkpoint.pt"
-step_loss_file = savedir / "step_loss.txt"
-epochs_per_save = 2
+	#########################
+	# Path to save stuff
+    savedir = Path(".")
+    checkpoint = savedir / "checkpoint.pt"
+    step_loss_file = savedir / "step_loss.txt"
+    epochs_per_save = 2
+
+@dataclass
+class SLURM_CONFIG:
+	#########################
+	# Set to True when training
+	# FIXME: better to use device rather than boolean (more clean logic)
+    use_cuda = False
+
+	#########################
+	# How much should be used for training
+    train_proportion = 1.0
+
+	#########################
+	# Spatial shape of each tensor that goes throgh the network
+    target_shape = (128, 128, 128)
+
+	#########################
+	# Path to the data
+    slurm_dir = os.getenv("$SLURM_TMPDIR")
+    if slurm_dir is None:
+        raise Exception("SLURM_TMPDIR is not defined")
+    data_root_dir = Path(slurm_dir) / "/Task04_Hippocampus/"
+    path_to_images = data_root_dir / "imagesTr/"
+    path_to_segs = data_root_dir / "labelsTr/"
+
+
+	#########################
+	# Function for matching image and seg files
+    matching_fn = lambda x: x
+
+	#########################
+	# Number of workers
+    num_workers = 3
+
+	#########################
+	# Loss params weighting
+    cross_corr_loss_weight, seg_loss_weight = 10, 10
+
+	#########################
+	# Number of epochs
+    epochs = 1000
+
+	#########################
+	# Number of epochs
+    lr = 1e-3
+
+	#########################
+	# Path to save stuff
+    savedir = Path(".")
+    checkpoint = savedir / "checkpoint.pt"
+    step_loss_file = savedir / "step_loss.txt"
+    epochs_per_save = 2

@@ -2,6 +2,7 @@
 Trains the NeurReg model
 """
 
+import sys
 from tqdm import trange, tqdm
 from dataset import ImageDataset
 from components import *
@@ -13,7 +14,7 @@ import torch
 from losses import NeurRegLoss
 from torch.utils.data import DataLoader
 
-def get_dataloader() -> DataLoader:
+def get_dataloader(params) -> DataLoader:
     dataset = ImageDataset(
         params.path_to_images,
         params.path_to_segs,
@@ -26,7 +27,7 @@ def get_dataloader() -> DataLoader:
     )
 
 
-def get_models() -> Dict[str, Module]:
+def get_models(params) -> Dict[str, Module]:
 
     N = Unet3D(inshape=params.target_shape)
     loss_func = NeurRegLoss(
@@ -52,9 +53,9 @@ def get_models() -> Dict[str, Module]:
     }
 
 
-def main():
-    dataloader = get_dataloader()
-    models = get_models()
+def main(params):
+    dataloader = get_dataloader(params)
+    models = get_models(params)
 
     N = models["N"]
     to_flow_field = models["to_flow_field"]
@@ -81,12 +82,9 @@ def main():
 
                 data["transform"] = data["displacement_field"]
 
-            #
-            # Only generate elastic field on CUDA (takes too long/crashes CPU)
-            #
-
             displacement_field = data["transform"]["displacement_field"]
             displacement_field = displacement_field.float()
+
             transformed_image = stn(data["moving"]["image"], displacement_field)
             transformed_seg = stn(data["moving"]["seg"], displacement_field)
 
@@ -130,4 +128,12 @@ def main():
                 f.write(f"step={step},loss={loss.item()};")
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 2 or sys.argv[1].lower() not in ("slurm", "cpu"):
+        print(f"Usage: {sys.argv[0]} <config_name>\nwhere <config_name> is one of (slurm, cpu)")
+        exit(0)
+    
+    config = sys.argv[1]
+    if config == "slurm":
+        main(params.SLURM_CONFIG)
+    else:
+        main(params.CPU_CONFIG)
