@@ -69,7 +69,8 @@ class SLURM_CONFIG:
 
     #########################
     # Path to the data
-    data_root_dir = Path("//localscratch/vsivan.27564466.0/Task04_Hippocampus/")
+    parent_dir = Path(os.environ.get('SLURM_TMPDIR'))
+    data_root_dir = parent_dir / "Task04_Hippocampus/"
     path_to_images = data_root_dir / "imagesTr/"
     path_to_segs = data_root_dir / "labelsTr/"
 
