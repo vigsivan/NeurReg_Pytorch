@@ -68,9 +68,7 @@ class SLURM_CONFIG:
 
 	#########################
 	# Path to the data
-    slurm_dir = os.getenv("$SLURM_TMPDIR")
-    if slurm_dir is None:
-        raise Exception("SLURM_TMPDIR is not defined")
+    slurm_dir = str(os.getenv("$SLURM_TMPDIR"))
     data_root_dir = Path(slurm_dir) / "/Task04_Hippocampus/"
     path_to_images = data_root_dir / "imagesTr/"
     path_to_segs = data_root_dir / "labelsTr/"

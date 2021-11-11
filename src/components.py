@@ -316,7 +316,7 @@ class RegistrationSimulator3D:
         t2df = sitk.TransformToDisplacementFieldFilter()
         t2df.SetReferenceImage(image.as_sitk())
         displacement_field =  t2df.Execute(composite)
-        return torch.from_numpy(displacement_field)
+        return tio.ScalarImage.from_sitk(displacement_field).data
 
 
     def __call__(
