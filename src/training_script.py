@@ -14,6 +14,7 @@ import torch
 from losses import NeurRegLoss
 from torch.utils.data import DataLoader
 
+
 def get_dataloader(params) -> DataLoader:
     dataset = ImageDataset(
         params.path_to_images,
@@ -22,9 +23,7 @@ def get_dataloader(params) -> DataLoader:
         target_shape=params.target_shape,
     )
 
-    dl =  DataLoader(
-        dataset, batch_size=1, shuffle=True, num_workers=params.num_workers
-    )
+    dl = DataLoader(dataset, batch_size=3, shuffle=True, num_workers=params.num_workers)
 
     use_cuda = "cuda" in params.device
     if use_cuda:
@@ -46,11 +45,11 @@ def get_models(params) -> Dict[str, Module]:
     conv_w_softmax = Sequential(Conv3d(17, 1, 3, padding=1), Softmax(3))
 
     return {
-        "N": N.to(params.device),
-        "to_flow_field": to_flow_field.to(params.device),
-        "conv_w_softmax": conv_w_softmax.to(params.device),
-        "stn": stn.to(params.device),
-        "loss_func": loss_func
+        "N": N,
+        "to_flow_field": to_flow_field,
+        "conv_w_softmax": conv_w_softmax,
+        "stn": stn,
+        "loss_func": loss_func,
     }
 
 
@@ -58,14 +57,16 @@ def main(params):
     dataloader = get_dataloader(params)
     models = get_models(params)
 
-    N = models["N"]
-    to_flow_field = models["to_flow_field"]
-    conv_w_softmax = models["conv_w_softmax"]
+    N = models["N"].to(params.device)
+    to_flow_field = models["to_flow_field"].to(params.device)
+    conv_w_softmax = models["conv_w_softmax"].to(params.device)
     loss_func = models["loss_func"]
-    stn = models["stn"]
+    stn = models["stn"].to(params.device)
 
     learnable_params = (
-        list(N.parameters()) + list(to_flow_field.parameters()) + list(conv_w_softmax.parameters())
+        list(N.parameters())
+        + list(to_flow_field.parameters())
+        + list(conv_w_softmax.parameters())
     )
     optimizer = torch.optim.Adam(learnable_params, lr=params.lr)
 
@@ -74,9 +75,18 @@ def main(params):
         for step, data in tqdm(enumerate(dataloader)):
             optimizer.zero_grad()
 
-            for v in data.values():
-                for tensor in v.values():
-                    tensor.to(params.device)
+            for category in ("moving", "another", "transform"):
+                for tensor in ("image", "seg"):
+                    data[category][tensor] = data[category][tensor].to(params.device)
+                if category == "transform":
+                    data[category]["field"] = data[category]["field"].to(params.device)
+                    data[category]["concat"] = data[category]["concat"].to(
+                        params.device
+                    )
+                if category == "another":
+                    data[category]["concat"] = data[category]["concat"].to(
+                        params.device
+                    )
 
             last_layer = N(data["transform"]["concat"])
             F_0 = to_flow_field(last_layer)
@@ -113,13 +123,18 @@ def main(params):
             with open(params.step_loss_file, "a") as f:
                 f.write(f"step={step},loss={loss.item()};")
 
+
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1].lower() not in ("slurm", "cpu"):
-        print(f"Usage: {sys.argv[0]} <config_name>\nwhere <config_name> is one of (slurm, cpu)")
+        print(
+            f"Usage: {sys.argv[0]} <config_name>\nwhere <config_name> is one of (slurm, cpu)"
+        )
         exit(0)
-    
+
     config = sys.argv[1]
     if config == "slurm":
+        print("Using SLURM CONFIG")
         main(params.SLURM_CONFIG)
     else:
+        print("Using CPU CONFIG")
         main(params.CPU_CONFIG)

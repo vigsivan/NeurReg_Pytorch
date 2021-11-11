@@ -192,7 +192,7 @@ class SpatialTransformer(nn.Module):
 
         # create sampling grid
         vectors = [torch.arange(0, s) for s in size]
-        grids = torch.meshgrid(vectors, indexing='ij')
+        grids = torch.meshgrid(vectors, indexing="ij")
         grid = torch.stack(grids)
         grid = torch.unsqueeze(grid, 0)
         grid = grid.float()
@@ -273,9 +273,7 @@ class RegistrationSimulator3D:
             return (x[0], x[1], x[2])
         return (x, x, x)
 
-    def generate_random_transform_tensors(
-        self, image: tio.ScalarImage
-    ) ->  torch.Tensor:
+    def generate_random_transform_tensors(self, image: tio.ScalarImage) -> torch.Tensor:
         """
         Generates new transforms
         """
@@ -299,7 +297,7 @@ class RegistrationSimulator3D:
         )
 
         elastic_cps = tio.RandomElasticDeformation.get_params(
-            num_control_points=(7,7,7),
+            num_control_points=(7, 7, 7),
             max_displacement=translation,
             num_locked_borders=2,
         )
@@ -308,20 +306,17 @@ class RegistrationSimulator3D:
         )
         elastic_sitk = elastic.get_bspline_transform(image.as_sitk())
         affine = tio.Affine(
-                    scales=scales, degrees=rotations, translation=translation
-                 ).get_affine_transform(image)
+            scales=scales, degrees=rotations, translation=translation
+        ).get_affine_transform(image)
 
         composite = sitk.CompositeTransform([elastic_sitk, affine])
 
         t2df = sitk.TransformToDisplacementFieldFilter()
         t2df.SetReferenceImage(image.as_sitk())
-        displacement_field =  t2df.Execute(composite)
+        displacement_field = t2df.Execute(composite)
         return tio.ScalarImage.from_sitk(displacement_field).data
 
-
-    def __call__(
-        self, image: tio.ScalarImage
-    ) ->  torch.Tensor:
+    def __call__(self, image: tio.ScalarImage) -> torch.Tensor:
         return self.generate_random_transform_tensors(image)
 
 

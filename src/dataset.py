@@ -11,8 +11,8 @@ from torch.utils.data import Dataset, DataLoader
 
 
 class ImageDataset(Dataset):
-    """
-    """
+    """ """
+
     def __init__(
         self,
         path_to_images: Path,
@@ -75,13 +75,20 @@ class ImageDataset(Dataset):
         another_seg = pad(tio.LabelMap(self.path_to_segmentations / seg_file).data)
 
         displacement_field = self.registration_simulator(
-            tio.ScalarImage(tensor=moving_image)).float()
+            tio.ScalarImage(tensor=moving_image)
+        ).float()
 
-        transform_image = self.stn(moving_image.unsqueeze(0),
-                displacement_field.unsqueeze(0)).squeeze().unsqueeze(0)
+        transform_image = (
+            self.stn(moving_image.unsqueeze(0), displacement_field.unsqueeze(0))
+            .squeeze()
+            .unsqueeze(0)
+        )
 
-        transform_seg = self.stn(moving_seg.unsqueeze(0),
-                displacement_field.unsqueeze(0)).squeeze().unsqueeze(0)
+        transform_seg = (
+            self.stn(moving_seg.unsqueeze(0), displacement_field.unsqueeze(0))
+            .squeeze()
+            .unsqueeze(0)
+        )
 
         concat1 = torch.cat((moving_image, transform_image), dim=0)
         concat2 = torch.cat((moving_image, another_image), dim=0)
@@ -101,6 +108,7 @@ class ImageDataset(Dataset):
 
         return data
 
+
 if __name__ == "__main__":
     dataset = ImageDataset(
         params.path_to_images,
@@ -109,6 +117,7 @@ if __name__ == "__main__":
         target_shape=params.target_shape,
     )
     import random
+
     data = random.choice(dataset)
     # dataloader = DataLoader(dataset, batch_size=6)
     # data = next(iter(dataloader))
