@@ -95,6 +95,7 @@ def local_cross_correlation_loss3D(
 
     numerator = torch.square(torch.sum((im_d) * (p_d)))
     denominator = torch.sum(torch.square(im_d)) * torch.sum(torch.square(p_d))
+    denominator = torch.clamp(denominator, min=1e-5)
     cross_corr = -(1 / Ω) * (numerator / denominator)
 
     return cross_corr
@@ -107,4 +108,6 @@ def tversky_loss2(
     """
     Computes the tversky loss for the 2-class case
     """
-    return -1 / 2 * torch.sum(2 * seg_gt * seg_pred) / torch.sum(seg_gt + seg_pred)
+    seg_sum = torch.sum(seg_gt + seg_pred)
+    denominator = torch.clamp(seg_sum, min=1e-5)
+    return -1 / 2 * torch.sum(2 * seg_gt * seg_pred) / denominator

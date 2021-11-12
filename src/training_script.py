@@ -7,7 +7,8 @@ from tqdm import trange, tqdm
 from dataset import ImageDataset
 from components import *
 from typing import Dict
-from torch.nn import Conv3d, Sequential, Softmax, Module
+from torch.nn import Conv3d, Sequential, Softmax, Module, Parameter
+from torch.distributions import Normal
 import params
 import torch
 
@@ -41,8 +42,12 @@ def get_models(params) -> Dict[str, Module]:
     )
     stn = SpatialTransformer(params.target_shape)
 
-    to_flow_field = Conv3d(16, 3, 3, padding=1)
     conv_w_softmax = Sequential(Conv3d(17, 1, 3, padding=1), Softmax(3))
+
+    # Copy strategy from voxelmorph
+    to_flow_field = Conv3d(16, 3, 3, padding=1, bias=True)
+    to_flow_field.weight = Parameter(Normal(0, 1e-5).sample(to_flow_field.weight.shape))
+    to_flow_field.bias = Parameter(torch.zeros(to_flow_field.bias.shape))
 
     return {
         "N": N,

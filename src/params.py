@@ -57,46 +57,50 @@ class SLURM_CONFIG:
     #########################
     # Set to True when training
     # FIXME: better to use device rather than boolean (more clean logic)
-    device = "cuda"
 
-    #########################
-    # How much should be used for training
-    train_proportion = 1.0
+    tmpdir = os.environ.get('SLURM_TMPDIR')
+    is_slurm_device = tmpdir is not None
+    if is_slurm_device:
+        device = "cuda"
 
-    #########################
-    # Spatial shape of each tensor that goes throgh the network
-    target_shape = (128, 128, 128)
+        #########################
+        # How much should be used for training
+        train_proportion = 1.0
 
-    #########################
-    # Path to the data
-    parent_dir = Path(os.environ.get('SLURM_TMPDIR'))
-    data_root_dir = parent_dir / "Task04_Hippocampus/"
-    path_to_images = data_root_dir / "imagesTr/"
-    path_to_segs = data_root_dir / "labelsTr/"
+        #########################
+        # Spatial shape of each tensor that goes throgh the network
+        target_shape = (128, 128, 128)
 
-    #########################
-    # Function for matching image and seg files
-    matching_fn = lambda x: x
+        #########################
+        # Path to the data
+        parent_dir = Path(os.environ.get('SLURM_TMPDIR'))
+        data_root_dir = parent_dir / "Task04_Hippocampus/"
+        path_to_images = data_root_dir / "imagesTr/"
+        path_to_segs = data_root_dir / "labelsTr/"
 
-    #########################
-    # Number of workers
-    num_workers = 12
+        #########################
+        # Function for matching image and seg files
+        matching_fn = lambda x: x
 
-    #########################
-    # Loss params weighting
-    cross_corr_loss_weight, seg_loss_weight = 10, 10
+        #########################
+        # Number of workers
+        num_workers = 12
 
-    #########################
-    # Number of epochs
-    epochs = 1000
+        #########################
+        # Loss params weighting
+        cross_corr_loss_weight, seg_loss_weight = 10, 10
 
-    #########################
-    # Number of epochs
-    lr = 1e-3
+        #########################
+        # Number of epochs
+        epochs = 1000
 
-    #########################
-    # Path to save stuff
-    savedir = Path("/home/vsivan/scratch/NeurReg_Pytorch/logging")
-    checkpoint = savedir / "checkpoint.pt"
-    step_loss_file = savedir / "step_loss.txt"
-    epochs_per_save = 2
+        #########################
+        # Number of epochs
+        lr = 1e-3
+
+        #########################
+        # Path to save stuff
+        savedir = Path("/home/vsivan/scratch/NeurReg_Pytorch/logging")
+        checkpoint = savedir / "checkpoint.pt"
+        step_loss_file = savedir / "step_loss.txt"
+        epochs_per_save = 2
