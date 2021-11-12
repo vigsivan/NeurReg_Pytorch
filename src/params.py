@@ -43,6 +43,7 @@ class CPU_CONFIG:
     #########################
     # Number of epochs
     lr = 1e-3
+    batch_size = 2
 
     #########################
     # Path to save stuff
@@ -96,6 +97,7 @@ class SLURM_CONFIG:
 
         #########################
         # Number of epochs
+        batch_size = 3
         lr = 1e-3
 
         #########################

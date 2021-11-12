@@ -24,7 +24,7 @@ def get_dataloader(params) -> DataLoader:
         target_shape=params.target_shape,
     )
 
-    dl = DataLoader(dataset, batch_size=3, shuffle=True, num_workers=params.num_workers)
+    dl = DataLoader(dataset, batch_size=params.batch_size, shuffle=True, num_workers=params.num_workers)
 
     use_cuda = "cuda" in params.device
     if use_cuda:
@@ -75,9 +75,15 @@ def main(params):
     )
     optimizer = torch.optim.Adam(learnable_params, lr=params.lr)
 
+    train_iter = iter(dataloader)
+
+    steps_per_epoch = len(dataloader.dataset)//params.batch_size
+    near_end_of_train = lambda x: x - steps_per_epoch < 5
+
     epochs = params.epochs
+    total_steps = 0
     for epoch in trange(epochs):
-        for step, data in tqdm(enumerate(dataloader)):
+        for step, data in tqdm(enumerate(train_iter)):
             optimizer.zero_grad()
 
             for category in ("moving", "another", "transform"):
@@ -115,6 +121,11 @@ def main(params):
             loss = loss_func(F_0, F_0g, I_0, I_0R, I_1, I_1R, S_0feat, S_0g, S_1, S_1g)
             loss.backward()
             optimizer.step()
+            total_steps += 1
+
+            # Use the hack to continuously keep going
+            if near_end_of_train(step):
+                train_iter = iter(dataloader)
 
         if epoch % params.epochs_per_save == 0:
             torch.save(
@@ -126,7 +137,7 @@ def main(params):
                 str(params.checkpoint),
             )
             with open(params.step_loss_file, "a") as f:
-                f.write(f"step={step},loss={loss.item()};")
+                f.write(f"step={total_steps},loss={loss.item()};")
 
 
 if __name__ == "__main__":
