@@ -9,6 +9,7 @@ from components import *
 from typing import Dict
 from torch.nn import Conv3d, Sequential, Softmax, Module, Parameter
 from torch.distributions import Normal
+from torch.utils.tensorboard import SummaryWriter
 import params
 import torch
 
@@ -61,6 +62,7 @@ def get_models(params) -> Dict[str, Module]:
 def main(params):
     dataloader = get_dataloader(params)
     models = get_models(params)
+    writer = SummaryWriter(params.savedir)
 
     N = models["N"].to(params.device)
     to_flow_field = models["to_flow_field"].to(params.device)
@@ -77,13 +79,10 @@ def main(params):
 
     train_iter = iter(dataloader)
 
-    steps_per_epoch = len(dataloader.dataset)//params.batch_size
-    near_end_of_train = lambda x: x - steps_per_epoch < 5
-
     epochs = params.epochs
     total_steps = 0
     for epoch in trange(epochs):
-        for step, data in tqdm(enumerate(train_iter)):
+        for _, data in tqdm(enumerate(train_iter)):
             optimizer.zero_grad()
 
             for category in ("moving", "another", "transform"):
@@ -123,9 +122,7 @@ def main(params):
             optimizer.step()
             total_steps += 1
 
-            # Use the hack to continuously keep going
-            if near_end_of_train(step):
-                train_iter = iter(dataloader)
+        writer.add_scalar("Loss/train", loss.item())
 
         if epoch % params.epochs_per_save == 0:
             torch.save(
