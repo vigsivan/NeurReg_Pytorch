@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 import params
 import torch
 
-from losses import NeurRegLoss
+from losses import NeurRegLoss, VoxelMorphLoss
 from torch.utils.data import DataLoader
 
 
@@ -38,9 +38,17 @@ def get_models(params) -> Dict[str, Module]:
 
     N = Unet3D(inshape=params.target_shape)
     use_cuda = "cuda" in params.device
-    loss_func = NeurRegLoss(
-        params.cross_corr_loss_weight, params.seg_loss_weight, use_cuda=use_cuda
-    )
+    if params.loss_func == "nr":
+        loss_func = NeurRegLoss(
+            params.cross_corr_loss_weight, params.seg_loss_weight, use_cuda=use_cuda
+        )
+    elif params.loss_func == "vm":
+        loss_func = VoxelMorphLoss(
+                params.cross_corr_loss_weight, params.seg_loss_weight, use_cuda=use_cuda
+        )
+    else:
+        raise Exception(f"Loss function {params.loss_func} not defined")
+
     stn = SpatialTransformer(params.target_shape)
 
     conv_w_softmax = Sequential(Conv3d(17, 1, 3, padding=1), Softmax(3))

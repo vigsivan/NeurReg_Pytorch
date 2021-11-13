@@ -46,6 +46,9 @@ class CPU_CONFIG:
     batch_size = 2
 
     #########################
+    loss_func = "vm" # One of "nr", "vm"
+
+    #########################
     # Path to save stuff
     savedir = Path(".")
     checkpoint = savedir / "checkpoint.pt"
@@ -100,6 +103,9 @@ class SLURM_CONFIG:
         # Number of epochs
         batch_size = 3
         lr = 1e-3
+
+        #########################
+        loss_func = "nr" # One of "nr", "vm"
 
         #########################
         # Path to save stuff
