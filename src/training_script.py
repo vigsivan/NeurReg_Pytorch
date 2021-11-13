@@ -52,7 +52,7 @@ def get_models(params) -> Dict[str, Module]:
 
     if 'cuda' in params.device and params.num_gpus > 1:
         N = torch.nn.DataParallel(N)
-        N.save = N.module.save
+        N.state_dict = N.module.state_dict
 
     conv_w_softmax.train()
     N.train()
@@ -84,12 +84,10 @@ def main(params):
     )
     optimizer = torch.optim.Adam(learnable_params, lr=params.lr)
 
-    train_iter = iter(dataloader)
-
     epochs = params.epochs
     total_steps = 0
     for epoch in trange(epochs):
-        for _, data in tqdm(enumerate(train_iter)):
+        for _, data in tqdm(enumerate(dataloader)):
 
             for category in ("moving", "another", "transform"):
                 for tensor in ("image", "seg"):
