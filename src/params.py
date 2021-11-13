@@ -63,6 +63,7 @@ class SLURM_CONFIG:
     is_slurm_device = tmpdir is not None
     if is_slurm_device:
         device = "cuda"
+        num_gpus = 3
 
         #########################
         # How much should be used for training

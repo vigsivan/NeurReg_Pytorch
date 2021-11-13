@@ -50,6 +50,13 @@ def get_models(params) -> Dict[str, Module]:
     to_flow_field.weight = Parameter(Normal(0, 1e-5).sample(to_flow_field.weight.shape))
     to_flow_field.bias = Parameter(torch.zeros(to_flow_field.bias.shape))
 
+    if 'cuda' in params.device and params.num_gpus > 1:
+        N = torch.nn.DataParallel(N)
+        N.save = N.module.save
+
+    conv_w_softmax.train()
+    N.train()
+
     return {
         "N": N,
         "to_flow_field": to_flow_field,
@@ -83,7 +90,6 @@ def main(params):
     total_steps = 0
     for epoch in trange(epochs):
         for _, data in tqdm(enumerate(train_iter)):
-            optimizer.zero_grad()
 
             for category in ("moving", "another", "transform"):
                 for tensor in ("image", "seg"):
@@ -118,8 +124,11 @@ def main(params):
             boosted = torch.cat((last_layer, S_0), 1)
             S_0feat = conv_w_softmax(boosted)
             loss = loss_func(F_0, F_0g, I_0, I_0R, I_1, I_1R, S_0feat, S_0g, S_1, S_1g)
+
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
             total_steps += 1
 
         writer.add_scalar("Loss/train", loss.item())

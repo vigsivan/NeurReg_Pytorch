@@ -32,6 +32,8 @@ class ImageDataset(Dataset):
             else RegistrationSimulator3D()
         )
 
+        self.rescale = tio.RescaleIntensity()
+
         self.stn = SpatialTransformer(target_shape)
 
         images = os.listdir(path_to_images)
@@ -58,7 +60,7 @@ class ImageDataset(Dataset):
             "transform": {},
         }
 
-        pad = lambda x: self.pad_fn(x.squeeze().unsqueeze(0)).float()
+        process = lambda x: self.rescale(self.pad_fn(x.squeeze().unsqueeze(0))).float()
 
         moving_image_file, moving_seg_file = self.images[index], self.segs[index]
         moving_image_tio = tio.ScalarImage(self.path_to_images / moving_image_file)
@@ -69,26 +71,26 @@ class ImageDataset(Dataset):
 
         # Expected format of the images is in B,C,D,W,H format
         # the pad function does all of the squeezing/unsqueezing necessary for 3D inputs
-        moving_image = pad(moving_image_tio.data)
-        moving_seg = pad(moving_seg_tio.data)
-        another_image = pad(tio.ScalarImage(self.path_to_images / image_file).data)
-        another_seg = pad(tio.LabelMap(self.path_to_segmentations / seg_file).data)
+        moving_image = process(moving_image_tio.data)
+        moving_seg = process(moving_seg_tio.data)
+        another_image = process(tio.ScalarImage(self.path_to_images / image_file).data)
+        another_seg = process(tio.LabelMap(self.path_to_segmentations / seg_file).data)
 
         displacement_field = self.registration_simulator(
             tio.ScalarImage(tensor=moving_image)
         ).float()
 
-        transform_image = (
+        transform_image = self.rescale((
             self.stn(moving_image.unsqueeze(0), displacement_field.unsqueeze(0))
             .squeeze()
             .unsqueeze(0)
-        )
+        ))
 
-        transform_seg = (
+        transform_seg = self.rescale((
             self.stn(moving_seg.unsqueeze(0), displacement_field.unsqueeze(0))
             .squeeze()
             .unsqueeze(0)
-        )
+        ))
 
         concat1 = torch.cat((moving_image, transform_image), dim=0)
         concat2 = torch.cat((moving_image, another_image), dim=0)

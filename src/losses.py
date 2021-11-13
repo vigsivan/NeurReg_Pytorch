@@ -12,7 +12,7 @@ __all__ = ["NeurRegLoss"]
 class NeurRegLoss(torch.nn.Module):
     """
 
-    The default window size is the default for the hippocampus dataset
+    The default window size is the default for the hippocampus dataset as per the paper
     The loss function only supports 3D inputs.
 
     Parameters:
