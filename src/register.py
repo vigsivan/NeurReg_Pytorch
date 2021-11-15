@@ -9,7 +9,7 @@ from components import *
 from typing import Dict
 from torch.nn import Conv3d, Sequential, Softmax, Module, Parameter
 from torch.distributions import Normal
-import params
+# import params
 import torch
 
 from losses import NeurRegLoss, VoxelMorphLoss
@@ -153,48 +153,49 @@ def save_images(images, fields):
         sitk.WriteImage(image_sitk, f"{iname}.nii.gz")
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2 or sys.argv[1].lower() not in ("slurm", "cpu"):
-        print(
-            f"Usage: {sys.argv[0]} <config_name>\nwhere <config_name> is one of (slurm, cpu)"
-        )
-        exit(0)
-
-    config = sys.argv[1]
-    if config == "slurm":
-        print("Using SLURM CONFIG")
-        # main(params.SLURM_CONFIG)
-        pms = params.SLURM_CONFIG
-    else:
-        print("Using CPU CONFIG")
-        pms = params.CPU_CONFIG
-        # main(params.CPU_CONFIG)
-
-    models = get_untrained_models(pms)
-    if pms == params.CPU_CONFIG:
-        checkpoint = torch.load(
-            ("/Users/vigsivan/logging/checkpoint.pt"), map_location=torch.device("cpu")
-        )
-    else:
-        checkpoint = torch.load(("/Users/vigsivan/logging/checkpoint.pt"))
-
-    models["N"].load_state_dict(checkpoint["N"])
-    models["to_flow_field"].load_state_dict(checkpoint["to_flow_field"])
-    models["conv_w_softmax"].load_state_dict(checkpoint["conv_w_softmax"])
-
-    val_iter = iter(get_dataloader(pms))
-    data = next(val_iter)
-
-    fields, images = infer(
-        pms,
-        data,
-        models["stn"],
-        models["to_flow_field"],
-        models["conv_w_softmax"],
-        models["N"],
-    )
-
-    save_images(images, fields)
+# TODO: modify script to use argparse. Params file is dead!!!!
+# if __name__ == "__main__":
+#     if len(sys.argv) != 2 or sys.argv[1].lower() not in ("slurm", "cpu"):
+#         print(
+#             f"Usage: {sys.argv[0]} <config_name>\nwhere <config_name> is one of (slurm, cpu)"
+#         )
+#         exit(0)
+#
+#     config = sys.argv[1]
+#     if config == "slurm":
+#         print("Using SLURM CONFIG")
+#         # main(params.SLURM_CONFIG)
+#         pms = params.SLURM_CONFIG
+#     else:
+#         print("Using CPU CONFIG")
+#         pms = params.CPU_CONFIG
+#         # main(params.CPU_CONFIG)
+#
+#     models = get_untrained_models(pms)
+#     if pms == params.CPU_CONFIG:
+#         checkpoint = torch.load(
+#             ("/Users/vigsivan/logging/checkpoint.pt"), map_location=torch.device("cpu")
+#         )
+#     else:
+#         checkpoint = torch.load(("/Users/vigsivan/logging/checkpoint.pt"))
+#
+#     models["N"].load_state_dict(checkpoint["N"])
+#     models["to_flow_field"].load_state_dict(checkpoint["to_flow_field"])
+#     models["conv_w_softmax"].load_state_dict(checkpoint["conv_w_softmax"])
+#
+#     val_iter = iter(get_dataloader(pms))
+#     data = next(val_iter)
+#
+#     fields, images = infer(
+#         pms,
+#         data,
+#         models["stn"],
+#         models["to_flow_field"],
+#         models["conv_w_softmax"],
+#         models["N"],
+#     )
+#
+#     save_images(images, fields)
 
 # moving = torch.from_numpy(sitk.GetArrayFromImage(sitk.ReadImage("./niis/moving_image.nii.gz"))[0,...]).unsqueeze(0)
 # works = torch.from_numpy(sitk.GetArrayFromImage(sitk.ReadImage("./niis/fields/synthetic_field.nii.gz")))[0,...].unsqueeze(0)

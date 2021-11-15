@@ -53,13 +53,17 @@ class ImageDataset(Dataset):
         self.images.sort()
         self.segs.sort()
 
-        assert self.data_consistency()
+        try:
+            assert self.data_consistency()
+        except AssertionError:
+            breakpoint()
+            print("Length images: ", len(self.images)) 
+            print("Length segs: ", len(self.segs)) 
 
     def dir_generator(self, dir: Path):
         for i in os.listdir(dir):
-            if i.startswith("."):
-                continue
-            yield i
+            if i.endswith(".nii.gz") and i[0] != ".":
+                yield i
 
     def data_consistency(self) -> bool:
         if len(self.images) != len(self.segs):

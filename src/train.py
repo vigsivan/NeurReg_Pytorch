@@ -53,7 +53,7 @@ def get_models(params) -> Dict[str, Module]:
     # Copy strategy from voxelmorph
     to_flow_field = Conv3d(16, 3, 3, padding=1, bias=True)
     to_flow_field.weight = Parameter(Normal(0, 1e-5).sample(to_flow_field.weight.shape))
-    if to_flow_field.bias:
+    if to_flow_field.bias is not None:
         to_flow_field.bias = Parameter(torch.zeros(to_flow_field.bias.shape))
 
     if "cuda" in params.device.lower() and params.num_gpus > 1:
