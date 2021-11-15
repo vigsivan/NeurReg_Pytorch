@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 from argparse import ArgumentParser, Namespace
 
+
 def get_dataloader(params) -> DataLoader:
     dataset = ImageDataset(
         params.imagedir,
@@ -24,7 +25,12 @@ def get_dataloader(params) -> DataLoader:
         target_shape=params.target_shape,
     )
 
-    dl = DataLoader(dataset, batch_size=params.batch_size, shuffle=True, num_workers=params.num_workers)
+    dl = DataLoader(
+        dataset,
+        batch_size=params.batch_size,
+        shuffle=True,
+        num_workers=params.num_workers,
+    )
 
     use_cuda = "cuda" in params.device
     if use_cuda:
@@ -50,7 +56,7 @@ def get_models(params) -> Dict[str, Module]:
     if to_flow_field.bias:
         to_flow_field.bias = Parameter(torch.zeros(to_flow_field.bias.shape))
 
-    if 'cuda' in params.device.lower() and params.num_gpus > 1:
+    if "cuda" in params.device.lower() and params.num_gpus > 1:
         N = torch.nn.DataParallel(N)
         N.state_dict = N.module.state_dict
         # Supposedly speeds up training
@@ -147,9 +153,10 @@ def main(params):
 
 
 def get_params() -> Namespace:
-    help_mssg = ["Trains the Neurreg model.\r"
-    "Note, the files in imagedir and segdir should have the same name\r"
-    "if they correspond to one another."
+    help_mssg = [
+        "Trains the Neurreg model.\r"
+        "Note, the files in imagedir and segdir should have the same name\r"
+        "if they correspond to one another."
     ][0]
 
     parser = ArgumentParser(description=help_mssg)
@@ -165,8 +172,8 @@ def get_params() -> Namespace:
     add_arg("--epochs", type=int, required=False, default=1500)
     add_arg("--batch_size", type=int, required=False, default=1)
     add_arg("--lr", type=float, required=False, default=1e-3)
-    add_arg("--cross_corr_loss_weight", type=float, required=False, default=10.)
-    add_arg("--seg_loss_weight", type=float, required=False, default=10.)
+    add_arg("--cross_corr_loss_weight", type=float, required=False, default=10.0)
+    add_arg("--seg_loss_weight", type=float, required=False, default=10.0)
 
     add_arg("--logdir", type=Path, required=False, default="../logging")
     add_arg("--experiment_name", type=str, required=False, default="experiment1")
@@ -181,10 +188,11 @@ def get_params() -> Namespace:
     if len(params.target_shape) == 3:
         params.target_shape = tuple(params.target_shape)
     else:
-        params.target_shape = tuple(params.target_shape*3)
+        params.target_shape = tuple(params.target_shape * 3)
     params.logdir.mkdir(exist_ok=True)
 
     return params
+
 
 if __name__ == "__main__":
     params = get_params()

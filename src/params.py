@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+
 @dataclass
 class CPU_CONFIG:
     #########################
@@ -46,7 +47,7 @@ class CPU_CONFIG:
     batch_size = 2
 
     #########################
-    loss_func = "vm" # One of "nr", "vm"
+    loss_func = "vm"  # One of "nr", "vm"
 
     #########################
     # Path to save stuff
@@ -61,7 +62,7 @@ class SLURM_CONFIG:
     #########################
     # Set to True when training
 
-    tmpdir = os.environ.get('SLURM_TMPDIR')
+    tmpdir = os.environ.get("SLURM_TMPDIR")
     is_slurm_device = tmpdir is not None
     if is_slurm_device:
         device = "cuda"
@@ -77,7 +78,7 @@ class SLURM_CONFIG:
 
         #########################
         # Path to the data
-        parent_dir = Path(os.environ.get('SLURM_TMPDIR'))
+        parent_dir = Path(os.environ.get("SLURM_TMPDIR"))
         data_root_dir = parent_dir / "Task04_Hippocampus/"
         path_to_images = data_root_dir / "imagesTr/"
         path_to_segs = data_root_dir / "labelsTr/"
@@ -104,7 +105,7 @@ class SLURM_CONFIG:
         lr = 1e-3
 
         #########################
-        loss_func = "nr" # One of "nr", "vm"
+        loss_func = "nr"  # One of "nr", "vm"
 
         #########################
         # Path to save stuff

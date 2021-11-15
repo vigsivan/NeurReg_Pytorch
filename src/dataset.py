@@ -11,7 +11,19 @@ from torch.utils.data import Dataset
 
 
 class ImageDataset(Dataset):
-    """ """
+    """
+    Image Dataset.
+
+    Note, corresponding images and segmentations need to have the same file name.
+
+    Parameters
+    ----------
+    path_to_images: Path
+    path_to_segmentations: Path
+    target_shape: Tuple[int,int,int]
+    registration_simulator: Optional[RegistrationSimulator3D]
+        default=None
+    """
 
     def __init__(
         self,
@@ -43,14 +55,15 @@ class ImageDataset(Dataset):
 
         assert self.data_consistency()
 
-
     def dir_generator(self, dir: Path):
         for i in os.listdir(dir):
-            if i.startswith('.'): continue
+            if i.startswith("."):
+                continue
             yield i
 
     def data_consistency(self) -> bool:
-        if len(self.images) != len(self.segs): return False
+        if len(self.images) != len(self.segs):
+            return False
         for i, s in zip(self.images, self.segs):
             if i != s:
                 return False
@@ -86,17 +99,21 @@ class ImageDataset(Dataset):
             tio.ScalarImage(tensor=moving_image)
         ).float()
 
-        transform_image = self.rescale((
-            self.stn(moving_image.unsqueeze(0), displacement_field.unsqueeze(0))
-            .squeeze()
-            .unsqueeze(0)
-        ))
+        transform_image = self.rescale(
+            (
+                self.stn(moving_image.unsqueeze(0), displacement_field.unsqueeze(0))
+                .squeeze()
+                .unsqueeze(0)
+            )
+        )
 
-        transform_seg = self.rescale((
-            self.stn(moving_seg.unsqueeze(0), displacement_field.unsqueeze(0))
-            .squeeze()
-            .unsqueeze(0)
-        ))
+        transform_seg = self.rescale(
+            (
+                self.stn(moving_seg.unsqueeze(0), displacement_field.unsqueeze(0))
+                .squeeze()
+                .unsqueeze(0)
+            )
+        )
 
         concat1 = torch.cat((moving_image, transform_image), dim=0)
         concat2 = torch.cat((moving_image, another_image), dim=0)
@@ -122,13 +139,16 @@ if __name__ == "__main__":
         print("Usage: sys.argv[0] <imagedir> <segdir> <target_shape_int>")
         exit("0")
 
-    path_to_images, path_to_segs, target_shape = (sys.argv[1],
-                                                  sys.argv[2],
-                                                  tuple([int(sys.argv[3])]*3))
+    path_to_images, path_to_segs, target_shape = (
+        sys.argv[1],
+        sys.argv[2],
+        tuple([int(sys.argv[3])] * 3),
+    )
     dataset = ImageDataset(
         Path(path_to_images),
         Path(path_to_segs),
         target_shape=target_shape,
     )
     import random
+
     data = random.choice(dataset)

@@ -212,9 +212,9 @@ class SpatialTransformer(nn.Module):
         # NOTE: this has been modified from the Voxelmorph implementation
         new_locs_norm = torch.empty_like(new_locs)
         for i in range(len(shape)):
-            d= new_locs[:,i, ...]
+            d = new_locs[:, i, ...]
             maxd, mind = torch.max(d), torch.min(d)
-            new_locs_norm[:, i, ...] = 2 * (d-mind)/(maxd-mind+1e-5) -1
+            new_locs_norm[:, i, ...] = 2 * (d - mind) / (maxd - mind + 1e-5) - 1
         # move channels dim to last position
         # also not sure why, but the channels need to be reversed
         if len(shape) == 2:

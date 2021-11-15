@@ -10,6 +10,7 @@ import torch.nn.functional as F
 
 __all__ = ["NeurRegLoss", "VoxelMorphLoss"]
 
+
 class VoxelMorphLoss(torch.nn.Module):
     """
     Uses implementations from the VoxelMorph paper instead of my implementations
@@ -17,7 +18,7 @@ class VoxelMorphLoss(torch.nn.Module):
     """
 
     def __init__(
-        self, λ, β, window_size: Tuple[int,int,int] = (5,5,5), use_cuda=False
+        self, λ, β, window_size: Tuple[int, int, int] = (5, 5, 5), use_cuda=False
     ):
         self.λ = λ
         self.β = β
@@ -44,13 +45,14 @@ class MSE:
         return torch.mean((y_true - y_pred) ** 2)
 
 
-
 class NCC:
     """
     Local (over window) normalized cross correlation loss.
     """
 
-    def __init__(self, win: Optional[Tuple[int,int,int]]=None, use_cuda: bool=False):
+    def __init__(
+        self, win: Optional[Tuple[int, int, int]] = None, use_cuda: bool = False
+    ):
         self.win = win
         self.use_cuda = use_cuda
 
@@ -62,7 +64,9 @@ class NCC:
         # get dimension of volume
         # assumes Ii, Ji are sized [batch_size, *vol_shape, nb_feats]
         ndims = len(list(Ii.size())) - 2
-        assert ndims in [1, 2, 3], "volumes should be 1 to 3 dimensions. found: %d" % ndims
+        assert ndims in [1, 2, 3], (
+            "volumes should be 1 to 3 dimensions. found: %d" % ndims
+        )
 
         # set window size
         win = [9] * ndims if self.win is None else self.win
@@ -76,8 +80,8 @@ class NCC:
         pad_no = math.floor(win[0] / 2)
 
         if ndims == 1:
-            stride = (1)
-            padding = (pad_no)
+            stride = 1
+            padding = pad_no
         elif ndims == 2:
             stride = (1, 1)
             padding = (pad_no, pad_no)
@@ -86,7 +90,7 @@ class NCC:
             padding = (pad_no, pad_no, pad_no)
 
         # get convolution function
-        conv_fn = getattr(F, 'conv%dd' % ndims)
+        conv_fn = getattr(F, "conv%dd" % ndims)
 
         # compute CC squares
         I2 = Ii * Ii
@@ -110,6 +114,7 @@ class NCC:
         cc = cross * cross / (I_var * J_var + 1e-5)
 
         return -torch.mean(cc)
+
 
 class Dice:
     """
@@ -197,7 +202,9 @@ def local_cross_correlation_loss3D(
     Ω = torch.prod(torch.tensor(image_gt.shape))
     conv_mag = torch.prod(torch.Tensor(window_size)).item()
     if use_cuda:
-        kernel = torch.full((1, 1, *window_size), fill_value=(1 / conv_mag), device="cuda")
+        kernel = torch.full(
+            (1, 1, *window_size), fill_value=(1 / conv_mag), device="cuda"
+        )
     else:
         kernel = torch.full((1, 1, *window_size), fill_value=(1 / conv_mag))
 
