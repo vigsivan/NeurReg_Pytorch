@@ -210,19 +210,22 @@ class SpatialTransformer(nn.Module):
         shape = flow.shape[2:]
 
         # need to normalize grid values to [-1, 1] for resampler
+        # NOTE: this has been modified from the Voxelmorph implementation
+        new_locs_norm = torch.empty_like(new_locs)
         for i in range(len(shape)):
-            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
-
+            d= new_locs[:,i, ...]
+            maxd, mind = torch.max(d), torch.min(d)
+            new_locs_norm[:, i, ...] = 2 * (d-mind)/(maxd-mind+1e-5) -1
         # move channels dim to last position
         # also not sure why, but the channels need to be reversed
         if len(shape) == 2:
-            new_locs = new_locs.permute(0, 2, 3, 1)
-            new_locs = new_locs[..., [1, 0]]
+            new_locs_norm = new_locs_norm.permute(0, 2, 3, 1)
+            new_locs_norm = new_locs_norm[..., [1, 0]]
         elif len(shape) == 3:
-            new_locs = new_locs.permute(0, 2, 3, 4, 1)
-            new_locs = new_locs[..., [2, 1, 0]]
+            new_locs_norm = new_locs_norm.permute(0, 2, 3, 4, 1)
+            new_locs_norm = new_locs_norm[..., [2, 1, 0]]
 
-        return F.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
+        return F.grid_sample(src, new_locs_norm, align_corners=True, mode=self.mode)
 
 
 class RegistrationSimulator3D:

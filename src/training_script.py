@@ -16,7 +16,6 @@ import torch
 from losses import NeurRegLoss, VoxelMorphLoss
 from torch.utils.data import DataLoader
 
-
 def get_dataloader(params) -> DataLoader:
     dataset = ImageDataset(
         params.path_to_images,
@@ -61,6 +60,8 @@ def get_models(params) -> Dict[str, Module]:
     if 'cuda' in params.device and params.num_gpus > 1:
         N = torch.nn.DataParallel(N)
         N.state_dict = N.module.state_dict
+        # Supposedly speeds up training
+        torch.backends.cudnn.deterministic = True
 
     conv_w_softmax.train()
     N.train()
@@ -72,7 +73,6 @@ def get_models(params) -> Dict[str, Module]:
         "stn": stn,
         "loss_func": loss_func,
     }
-
 
 def main(params):
     dataloader = get_dataloader(params)
@@ -154,8 +154,7 @@ def main(params):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1].lower() not in ("slurm", "cpu"):
-        print(
-            f"Usage: {sys.argv[0]} <config_name>\nwhere <config_name> is one of (slurm, cpu)"
+        print( f"Usage: {sys.argv[0]} <config_name>\nwhere <config_name> is one of (slurm, cpu)"
         )
         exit(0)
 
