@@ -2,7 +2,6 @@
 Trains the NeurReg model
 """
 
-import sys
 from tqdm import trange, tqdm
 from dataset import ImageDataset
 from components import *
@@ -10,17 +9,18 @@ from typing import Dict
 from torch.nn import Conv3d, Sequential, Softmax, Module, Parameter
 from torch.distributions import Normal
 from torch.utils.tensorboard import SummaryWriter
-import params
 import torch
 
-from losses import NeurRegLoss, VoxelMorphLoss
+from losses import NeurRegLoss
 from torch.utils.data import DataLoader
+
+from pathlib import Path
+from argparse import ArgumentParser, Namespace
 
 def get_dataloader(params) -> DataLoader:
     dataset = ImageDataset(
-        params.path_to_images,
-        params.path_to_segs,
-        params.matching_fn,
+        params.imagedir,
+        params.segdir,
         target_shape=params.target_shape,
     )
 
@@ -37,17 +37,9 @@ def get_models(params) -> Dict[str, Module]:
 
     N = Unet3D(inshape=params.target_shape)
     use_cuda = "cuda" in params.device
-    if params.loss_func == "nr":
-        loss_func = NeurRegLoss(
-            params.cross_corr_loss_weight, params.seg_loss_weight, use_cuda=use_cuda
-        )
-    elif params.loss_func == "vm":
-        loss_func = VoxelMorphLoss(
-                params.cross_corr_loss_weight, params.seg_loss_weight, use_cuda=use_cuda
-        )
-    else:
-        raise Exception(f"Loss function {params.loss_func} not defined")
-
+    loss_func = NeurRegLoss(
+        params.cross_corr_loss_weight, params.seg_loss_weight, use_cuda=use_cuda
+    )
     stn = SpatialTransformer(params.target_shape)
 
     conv_w_softmax = Sequential(Conv3d(17, 1, 3, padding=1), Softmax(3))
@@ -55,13 +47,14 @@ def get_models(params) -> Dict[str, Module]:
     # Copy strategy from voxelmorph
     to_flow_field = Conv3d(16, 3, 3, padding=1, bias=True)
     to_flow_field.weight = Parameter(Normal(0, 1e-5).sample(to_flow_field.weight.shape))
-    to_flow_field.bias = Parameter(torch.zeros(to_flow_field.bias.shape))
+    if to_flow_field.bias:
+        to_flow_field.bias = Parameter(torch.zeros(to_flow_field.bias.shape))
 
-    if 'cuda' in params.device and params.num_gpus > 1:
+    if 'cuda' in params.device.lower() and params.num_gpus > 1:
         N = torch.nn.DataParallel(N)
         N.state_dict = N.module.state_dict
         # Supposedly speeds up training
-        torch.backends.cudnn.deterministic = True
+        # torch.backends.cudnn.deterministic = True
 
     conv_w_softmax.train()
     N.train()
@@ -74,10 +67,11 @@ def get_models(params) -> Dict[str, Module]:
         "loss_func": loss_func,
     }
 
+
 def main(params):
     dataloader = get_dataloader(params)
     models = get_models(params)
-    writer = SummaryWriter(params.savedir)
+    writer = SummaryWriter(params.logdir)
 
     N = models["N"].to(params.device)
     to_flow_field = models["to_flow_field"].to(params.device)
@@ -152,16 +146,46 @@ def main(params):
                 f.write(f"step={total_steps},loss={loss.item()};")
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2 or sys.argv[1].lower() not in ("slurm", "cpu"):
-        print( f"Usage: {sys.argv[0]} <config_name>\nwhere <config_name> is one of (slurm, cpu)"
-        )
-        exit(0)
+def get_params() -> Namespace:
+    help_mssg = ["Trains the Neurreg model.\r"
+    "Note, the files in imagedir and segdir should have the same name\r"
+    "if they correspond to one another."
+    ][0]
 
-    config = sys.argv[1]
-    if config == "slurm":
-        print("Using SLURM CONFIG")
-        main(params.SLURM_CONFIG)
+    parser = ArgumentParser(description=help_mssg)
+    add_arg = parser.add_argument
+
+    add_arg("imagedir", type=Path)
+    add_arg("segdir", type=Path)
+
+    add_arg("--target_shape", type=int, nargs="+", default=128, required=False)
+    add_arg("--device", type=str, required=False, default="cpu")
+    add_arg("--num_gpus", type=int, required=False, default=0)
+    add_arg("--num_workers", type=int, required=False, default=4)
+    add_arg("--epochs", type=int, required=False, default=1500)
+    add_arg("--batch_size", type=int, required=False, default=1)
+    add_arg("--lr", type=float, required=False, default=1e-3)
+    add_arg("--cross_corr_loss_weight", type=float, required=False, default=10.)
+    add_arg("--seg_loss_weight", type=float, required=False, default=10.)
+
+    add_arg("--logdir", type=Path, required=False, default="../logging")
+    add_arg("--experiment_name", type=str, required=False, default="experiment1")
+    add_arg("--epochs_per_save", type=int, required=False, default=2)
+
+    params = parser.parse_args()
+    params.checkpoint = params.experiment_name + "_checkpoint.pt"
+    params.step_loss_file = params.experiment_name + "_step_loss.txt"
+
+    if len(params.target_shape) not in (1, 3):
+        raise Exception("Target shape should either be 1 or 3")
+    if len(params.target_shape) == 3:
+        params.target_shape = tuple(params.target_shape)
     else:
-        print("Using CPU CONFIG")
-        main(params.CPU_CONFIG)
+        params.target_shape = tuple(params.target_shape*3)
+    params.logdir.mkdir(exist_ok=True)
+
+    return params
+
+if __name__ == "__main__":
+    params = get_params()
+    main(params)

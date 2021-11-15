@@ -2,7 +2,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-
 @dataclass
 class CPU_CONFIG:
     #########################
@@ -16,7 +15,8 @@ class CPU_CONFIG:
 
     #########################
     # Spatial shape of each tensor that goes throgh the network
-    target_shape = (128, 128, 128)
+    # target_shape = (128, 128, 128)
+    target_shape = (512, 512, 512)
 
     #########################
     # Path to the data
@@ -60,7 +60,6 @@ class CPU_CONFIG:
 class SLURM_CONFIG:
     #########################
     # Set to True when training
-    # FIXME: better to use device rather than boolean (more clean logic)
 
     tmpdir = os.environ.get('SLURM_TMPDIR')
     is_slurm_device = tmpdir is not None

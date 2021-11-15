@@ -1,13 +1,13 @@
 import os
+import sys
 import random
 import torchio as tio
 import torch
-from params import CPU_CONFIG as params
-from typing import Callable, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 from pathlib import Path
 
 from components import *
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
 
 class ImageDataset(Dataset):
@@ -17,7 +17,6 @@ class ImageDataset(Dataset):
         self,
         path_to_images: Path,
         path_to_segmentations: Path,
-        matching_fn: Callable,
         target_shape: Tuple[int, int, int],
         registration_simulator: Optional[RegistrationSimulator3D] = None,
     ):
@@ -36,19 +35,26 @@ class ImageDataset(Dataset):
 
         self.stn = SpatialTransformer(target_shape)
 
-        images = os.listdir(path_to_images)
-        segmentations = os.listdir(path_to_segmentations)
+        self.images = [i for i in self.dir_generator(path_to_images)]
+        self.segs = [i for i in self.dir_generator(path_to_segmentations)]
 
-        self.images, self.segs = self.match(images, segmentations, matching_fn)
-        assert len(self.images) == len(self.segs)
+        self.images.sort()
+        self.segs.sort()
 
-    def match(self, prefix_list, added_list, matching_fn):
-        sorted_prefix_list, sorted_added_list = [], []
-        for i in prefix_list:
-            if matching_fn(i) in added_list:
-                sorted_prefix_list.append(i)
-                sorted_added_list.append(matching_fn(i))
-        return sorted_prefix_list, sorted_added_list
+        assert self.data_consistency()
+
+
+    def dir_generator(self, dir: Path):
+        for i in os.listdir(dir):
+            if i.startswith('.'): continue
+            yield i
+
+    def data_consistency(self) -> bool:
+        if len(self.images) != len(self.segs): return False
+        for i, s in zip(self.images, self.segs):
+            if i != s:
+                return False
+        return True
 
     def __len__(self):
         return len(self.images)
@@ -112,14 +118,17 @@ class ImageDataset(Dataset):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("Usage: sys.argv[0] <imagedir> <segdir> <target_shape_int>")
+        exit("0")
+
+    path_to_images, path_to_segs, target_shape = (sys.argv[1],
+                                                  sys.argv[2],
+                                                  tuple([int(sys.argv[3])]*3))
     dataset = ImageDataset(
-        params.path_to_images,
-        params.path_to_segs,
-        params.matching_fn,
-        target_shape=params.target_shape,
+        Path(path_to_images),
+        Path(path_to_segs),
+        target_shape=target_shape,
     )
     import random
-
     data = random.choice(dataset)
-    # dataloader = DataLoader(dataset, batch_size=6)
-    # data = next(iter(dataloader))

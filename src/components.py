@@ -22,7 +22,6 @@ The inputs and outputs are denoted and defined as follows:
 
 from typing import Tuple, Union, List
 import random
-from scipy.ndimage import gaussian_filter
 
 import SimpleITK as sitk
 import numpy as np
@@ -299,6 +298,8 @@ class RegistrationSimulator3D:
             tuple([image.spatial_shape[i] * tf for i, tf in enumerate(tfs)])
         )
 
+        # TODO: using tio's elastic deformation field instead
+        # need to evaluate this effect of doing this instead of doing convolution on cpu
         elastic_cps = tio.RandomElasticDeformation.get_params(
             num_control_points=(7, 7, 7),
             max_displacement=translation,
