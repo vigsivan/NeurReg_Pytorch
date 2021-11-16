@@ -9,6 +9,7 @@ from typing import Dict
 from torch.nn import Conv3d, Sequential, Softmax, Module, Parameter
 from torch.distributions import Normal
 from torch.utils.tensorboard import SummaryWriter
+import logging
 import torch
 
 from losses import NeurRegLoss
@@ -23,6 +24,7 @@ def get_dataloader(params) -> DataLoader:
         params.imagedir,
         params.segdir,
         target_shape=params.target_shape,
+        resize=params.shape_op == "resize"
     )
 
     dl = DataLoader(
@@ -166,6 +168,7 @@ def get_params() -> Namespace:
     add_arg("segdir", type=Path)
 
     add_arg("--target_shape", type=int, nargs="+", default=128, required=False)
+    add_arg("--shape_op", type=str, choices=("resize", "pad"), required=False, default="pad")
     add_arg("--device", type=str, required=False, default="cpu")
     add_arg("--num_gpus", type=int, required=False, default=0)
     add_arg("--num_workers", type=int, required=False, default=4)
@@ -196,4 +199,6 @@ def get_params() -> Namespace:
 
 if __name__ == "__main__":
     params = get_params()
+    logfile = params.logdir / (params.experiment_name + ".log")
+    logging.basicConfig(filename=str(logfile), level=logging.INFO)
     main(params)

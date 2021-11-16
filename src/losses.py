@@ -6,6 +6,7 @@ from typing import Tuple, Optional
 import math
 import numpy as np
 import torch
+import logging
 import torch.nn.functional as F
 
 __all__ = ["NeurRegLoss", "VoxelMorphLoss"]
@@ -234,5 +235,7 @@ def tversky_loss2(
     Computes the tversky loss for the 2-class case
     """
     seg_sum = torch.sum(seg_gt + seg_pred)
+    if seg_sum.item() == 0:
+        logging.info("seg_sum is equal to 0")
     denominator = torch.clamp(seg_sum, min=1e-5)
     return -1 / 2 * torch.sum(2 * seg_gt * seg_pred) / denominator

@@ -3,6 +3,7 @@ import sys
 import random
 import torchio as tio
 import torch
+import logging
 from typing import Dict, Optional, Tuple
 from pathlib import Path
 
@@ -30,12 +31,18 @@ class ImageDataset(Dataset):
         path_to_images: Path,
         path_to_segmentations: Path,
         target_shape: Tuple[int, int, int],
+        resize: bool=False,
         registration_simulator: Optional[RegistrationSimulator3D] = None,
     ):
         super().__init__()
         self.path_to_images = path_to_images
         self.path_to_segmentations = path_to_segmentations
-        self.pad_fn = tio.CropOrPad(target_shape, padding_mode=0)
+        if resize:
+            self.size_fn = tio.Resize(target_shape)
+            logging.info("Resizing images")
+        else:
+            self.size_fn = tio.CropOrPad(target_shape, padding_mode=0)
+            logging.info("Cropping/padding images")
 
         self.registration_simulator = (
             registration_simulator
@@ -53,12 +60,7 @@ class ImageDataset(Dataset):
         self.images.sort()
         self.segs.sort()
 
-        try:
-            assert self.data_consistency()
-        except AssertionError:
-            breakpoint()
-            print("Length images: ", len(self.images)) 
-            print("Length segs: ", len(self.segs)) 
+        assert self.data_consistency()
 
     def dir_generator(self, dir: Path):
         for i in os.listdir(dir):
@@ -83,7 +85,7 @@ class ImageDataset(Dataset):
             "transform": {},
         }
 
-        process = lambda x: self.rescale(self.pad_fn(x.squeeze().unsqueeze(0))).float()
+        process = lambda x: self.rescale(self.size_fn(x.squeeze().unsqueeze(0))).float()
 
         moving_image_file, moving_seg_file = self.images[index], self.segs[index]
         moving_image_tio = tio.ScalarImage(self.path_to_images / moving_image_file)
@@ -152,7 +154,19 @@ if __name__ == "__main__":
         Path(path_to_images),
         Path(path_to_segs),
         target_shape=target_shape,
+        resize=False
     )
     import random
 
-    data = random.choice(dataset)
+    data: Dict[str, Dict[str, torch.Tensor]] = random.choice(dataset)
+    # tio.ScalarImage(tensor=data["moving"]["image"]).save("./cropped.nii.gz")
+    #
+    # dataset = ImageDataset(
+    #     Path(path_to_images),
+    #     Path(path_to_segs),
+    #     target_shape=target_shape,
+    #     resize=True
+    # )
+    #
+    # data = random.choice(dataset)
+    # tio.ScalarImage(tensor=data["moving"]["image"]).save("./resized.nii.gz")
