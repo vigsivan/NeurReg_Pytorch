@@ -31,7 +31,7 @@ class ImageDataset(Dataset):
         path_to_images: Path,
         path_to_segmentations: Path,
         target_shape: Tuple[int, int, int],
-        resize: bool=False,
+        resize: bool = False,
         registration_simulator: Optional[RegistrationSimulator3D] = None,
     ):
         super().__init__()
@@ -154,7 +154,7 @@ if __name__ == "__main__":
         Path(path_to_images),
         Path(path_to_segs),
         target_shape=target_shape,
-        resize=False
+        resize=False,
     )
     import random
 
