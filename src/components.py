@@ -176,12 +176,8 @@ class ConvBlock(nn.Module):
 
 
 class SpatialTransformer(nn.Module):
-    """N-D Spatial Transformer
-
-    Pulled from VoxelMorph Pytorch implementation
-
-    We also use this module to generate the elastic deformation field
-    as we would like this to happen on the GPU.
+    """
+    N-D Spatial Transformer
     """
 
     def __init__(self, size, mode="bilinear"):
@@ -194,7 +190,7 @@ class SpatialTransformer(nn.Module):
         grids = torch.meshgrid(vectors, indexing="ij")
         grid = torch.stack(grids)
         grid = torch.unsqueeze(grid, 0)
-        grid = grid.float()
+        grid = grid.type(torch.FloatTensor)
 
         # registering the grid as a buffer cleanly moves it to the GPU, but it also
         # adds it to the state dict. this is annoying since everything in the state dict
@@ -203,28 +199,26 @@ class SpatialTransformer(nn.Module):
         # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
         self.register_buffer("grid", grid)
 
-    def forward(self, src, flow) -> torch.Tensor:
+    def forward(self, src, flow):
         # new locations
         new_locs = self.grid + flow
         shape = flow.shape[2:]
 
         # need to normalize grid values to [-1, 1] for resampler
-        # NOTE: this has been modified from the Voxelmorph implementation
-        new_locs_norm = torch.empty_like(new_locs)
         for i in range(len(shape)):
-            d = new_locs[:, i, ...]
-            maxd, mind = torch.max(d), torch.min(d)
-            new_locs_norm[:, i, ...] = 2 * (d - mind) / (maxd - mind + 1e-5) - 1
+            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
+
         # move channels dim to last position
         # also not sure why, but the channels need to be reversed
         if len(shape) == 2:
-            new_locs_norm = new_locs_norm.permute(0, 2, 3, 1)
-            new_locs_norm = new_locs_norm[..., [1, 0]]
+            new_locs = new_locs.permute(0, 2, 3, 1)
+            new_locs = new_locs[..., [1, 0]]
         elif len(shape) == 3:
-            new_locs_norm = new_locs_norm.permute(0, 2, 3, 4, 1)
-            new_locs_norm = new_locs_norm[..., [2, 1, 0]]
+            new_locs = new_locs.permute(0, 2, 3, 4, 1)
+            new_locs = new_locs[..., [2, 1, 0]]
 
-        return F.grid_sample(src, new_locs_norm, align_corners=True, mode=self.mode)
+        src = src.unsqueeze(0)
+        return F.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
 
 class RegistrationSimulator3D:
@@ -318,7 +312,9 @@ class RegistrationSimulator3D:
         t2df = sitk.TransformToDisplacementFieldFilter()
         t2df.SetReferenceImage(image.as_sitk())
         displacement_field = t2df.Execute(composite)
-        return tio.ScalarImage.from_sitk(displacement_field).data
+        return tio.ScalarImage.from_sitk(displacement_field).data.type(
+            torch.FloatTensor
+        )
 
     def __call__(self, image: tio.ScalarImage) -> torch.Tensor:
         return self.generate_random_transform_tensors(image)
