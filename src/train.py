@@ -6,7 +6,6 @@ from tqdm import trange, tqdm
 from dataset import ImageDataset
 from components import *
 from torch.utils.tensorboard import SummaryWriter
-import torchio as tio
 import logging
 import torch
 
@@ -29,6 +28,7 @@ def get_dataloader(params) -> DataLoader:
         params.imagedir,
         params.segdir,
         target_shape=params.target_shape,
+        transform=params.transform_cpu,
         resize=params.shape_op == "resize",
     )
 
@@ -51,7 +51,7 @@ def main(params):
     writer = SummaryWriter(params.logdir)
 
     simulator = RegistrationSimulator3D()
-    model = NeurRegNet(params.target_shape)
+    model = NeurRegNet(params.target_shape, transform_inputs=not params.transform_cpu)
     optimizer = torch.optim.Adam(model.parameters(), lr=params.lr)
     tsum = lambda t: t[0] + t[1]
 
@@ -60,11 +60,26 @@ def main(params):
     for epoch in trange(epochs):
         steps = 0
         epoch_loss = 0
-        for _, (mov_im, mov_seg, targ_im, targ_seg) in tqdm(enumerate(dataloader)):
+        for _, data in tqdm(enumerate(dataloader)):
             steps += 1
-            transform = simulator(mov_im)
             optimizer.zero_grad()
-            outputs = model(mov_im, mov_seg, targ_im, transform)
+
+            if not params.transform_cpu:
+                (mov_im, mov_seg, targ_im, targ_seg) = data
+                transform = simulator(mov_im)
+                outputs = model(mov_im, mov_seg, targ_im, transform)
+
+            else:
+                (mov_im, mov_seg, targ_im, targ_seg,
+                transform, transformed_image, transformed_seg) = data
+
+                outputs = model(mov_im, 
+                                mov_seg, 
+                                targ_im, 
+                                transform, 
+                                transformed_image,
+                                transformed_seg)
+
             field_pair = (transform, outputs.moving_to_precomputed_field)
             image_pairs = (
                 (outputs.precomputed_image, outputs.moving_to_precomputed_image),
@@ -135,6 +150,7 @@ def get_params() -> Namespace:
     add_arg("--logdir", type=Path, required=False, default="../logging")
     add_arg("--experiment_name", type=str, required=False, default="experiment1")
     add_arg("--epochs_per_save", type=int, required=False, default=2)
+    add_arg("--transform-cpu", help="Compute transforms on the cpu", action="store_true")
 
     params = parser.parse_args()
     params.checkpoint = params.experiment_name + "_checkpoint.pt"

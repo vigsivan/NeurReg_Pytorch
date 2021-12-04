@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import (
     Optional,
     Tuple,
+    Union,
 )
 
 import torch
@@ -15,17 +16,12 @@ from torch.nn import (
 )
 from torch.distributions import Normal
 
-__all__ = ["NeurRegNet", "NeurRegOutputs"]
-
+__all__ = ["NeurRegNet"]
 
 @dataclass
-class NeurRegOutputs:
+class NeurRegTrainOutputs:
     """
     Data class for storing the outputs of the model.
-
-    Because the model may be used for inference, we make optional
-    all data that we need for training (e.g. pre-computed transform)
-
     """
 
     moving_to_target_field: torch.Tensor
@@ -37,6 +33,15 @@ class NeurRegOutputs:
     precomputed_image: torch.Tensor
     precomputed_segmentation: torch.Tensor
 
+@dataclass
+class NeurRegValOutputs:
+    """
+    Data class for storing the outputs of the model during inference.
+    """
+
+    moving_to_target_field: torch.Tensor
+    moving_to_target_image: torch.Tensor
+    moving_to_target_segmentation: torch.Tensor
 
 class NeurRegNet(Module):
     """
@@ -46,11 +51,15 @@ class NeurRegNet(Module):
     ----------
     target_shape: Tuple[int,int,int]
         The shape of the inputs
+    transform_inputs: bool
+        If True, the model transforms the inputs. If false,
+        the model expects the transformed inputs for each forward pass
     """
 
-    def __init__(self, target_shape: Tuple[int, int, int]):
+    def __init__(self, target_shape: Tuple[int, int, int], transform_inputs: bool=True):
         super().__init__()
         self.N = Unet3D(inshape=target_shape)
+        self.transform_inputs = transform_inputs
         self.stn = SpatialTransformer(target_shape)
 
         # TODO: review the to_flow_field code
@@ -70,8 +79,10 @@ class NeurRegNet(Module):
         moving_image: torch.Tensor,
         moving_seg: torch.Tensor,
         target_image: torch.Tensor,
-        transform_field: Optional[torch.Tensor],
-    ) -> NeurRegOutputs:
+        transform_field: Optional[torch.Tensor]=None,
+        transformed_image: Optional[torch.Tensor]=None,
+        transformed_seg: Optional[torch.Tensor]=None,
+    ) -> Union[NeurRegTrainOutputs, NeurRegValOutputs]:
         """
         Parameters
         ----------
@@ -92,31 +103,44 @@ class NeurRegNet(Module):
         moving_to_target_image = self.stn(moving_image, moving_to_target_field)
         moving_to_target_seg = self.stn(moving_seg, moving_to_target_field)
 
-        transformed_image: torch.Tensor = self.stn(moving_image, transform_field)
-        transformed_seg: torch.Tensor = self.stn(moving_seg, transform_field)
-        transform_concat = torch.cat((moving_image, transformed_image), 1)
+        if self.training:
 
-        last_layer = self.N(transform_concat)  # cache last layer for boosting
-        moving_to_precomputed_field = self.to_flow_field(last_layer)
-        moving_to_precomputed_image = self.stn(
-            moving_image, moving_to_precomputed_field
-        )
-        moving_to_precomputed_segmentation = self.stn(
-            moving_seg, moving_to_precomputed_field
-        )
-        # Concatenate along the channel dimension
-        boosted = torch.cat((last_layer, moving_to_precomputed_segmentation), dim=1)
-        boosted_segmentation = self.conv_w_softmax(boosted)
+            if self.transform_inputs:
+                assert transform_field is not None
+                transformed_image = self.stn(moving_image, transform_field)
+                transformed_seg = self.stn(moving_seg, transform_field)
 
-        outputs = NeurRegOutputs(
-            moving_to_target_field=moving_to_target_field,
-            moving_to_target_image=moving_to_target_image,
-            moving_to_target_segmentation=moving_to_target_seg,
-            moving_to_precomputed_field=moving_to_precomputed_field,
-            moving_to_precomputed_image=moving_to_precomputed_image,
-            moving_to_precomputed_segmentation=boosted_segmentation,
-            precomputed_image=transformed_image,
-            precomputed_segmentation=transformed_seg,
-        )
+            assert transformed_image is not None and transformed_seg is not None
+            transform_concat = torch.cat((moving_image, transformed_image), 1)
 
-        return outputs
+            last_layer = self.N(transform_concat)  # cache last layer for boosting
+            moving_to_precomputed_field = self.to_flow_field(last_layer)
+            moving_to_precomputed_image = self.stn(
+                moving_image, moving_to_precomputed_field
+            )
+            moving_to_precomputed_segmentation = self.stn(
+                moving_seg, moving_to_precomputed_field
+            )
+            # Concatenate along the channel dimension
+            boosted = torch.cat((last_layer, moving_to_precomputed_segmentation), dim=1)
+            boosted_segmentation = self.conv_w_softmax(boosted)
+
+            outputs = NeurRegTrainOutputs(
+                moving_to_target_field=moving_to_target_field,
+                moving_to_target_image=moving_to_target_image,
+                moving_to_target_segmentation=moving_to_target_seg,
+                moving_to_precomputed_field=moving_to_precomputed_field,
+                moving_to_precomputed_image=moving_to_precomputed_image,
+                moving_to_precomputed_segmentation=boosted_segmentation,
+                precomputed_image=transformed_image,
+                precomputed_segmentation=transformed_seg,
+            )
+
+            return outputs
+
+        else:
+            return NeurRegValOutputs(
+                moving_to_target_field=moving_to_target_field,
+                moving_to_target_image=moving_to_target_image,
+                moving_to_target_segmentation=moving_to_target_seg,
+            )

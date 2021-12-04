@@ -20,16 +20,16 @@ class ImageDataset(Dataset):
 
     Parameters
     ----------
-    path_to_images: Path
-    path_to_segmentations: Path
-    target_shape: Tuple[int,int,int]
-    prob_same: float
-        A number between 0 and 1 for the probability that the two numbers
-    resize: bool
-        If True, this resizes the image. Else, the image is cropped or padded to target
-    registration_simulator: Optional[RegistrationSimulator3D]
-        default=None
-        If False, does not return transformed images
+        self,
+        path_to_images: Path,
+        path_to_segmentations: Path,
+        target_shape: Tuple[int, int, int],
+        transform: bool
+            If True, the image is transformed and transformed images are returned
+        resize: bool
+            If True, the images are resized (through interpolation).
+            Else, they are cropped/padded.
+            Default=True.
     """
 
     def __init__(
@@ -37,13 +37,17 @@ class ImageDataset(Dataset):
         path_to_images: Path,
         path_to_segmentations: Path,
         target_shape: Tuple[int, int, int],
-        prob_same: float = 0.0,
+        transform: bool=True,
         resize: bool = False,
     ):
         super().__init__()
         self.path_to_images = path_to_images
         self.path_to_segmentations = path_to_segmentations
-        self.prob_same = prob_same
+
+        self.transform = transform
+        self.simulator = RegistrationSimulator3D()
+        self.stn = SpatialTransformer(target_shape)
+
         if resize:
             self.size_fn = tio.Resize(target_shape)
             logging.info("Resizing images")
@@ -116,6 +120,17 @@ class ImageDataset(Dataset):
         next_index = random.randint(0, len(self) - 1)
         target_image = self.process(self.images[next_index], index)
         target_seg = self.process(self.segs[next_index], index, is_seg=True)
+
+        if self.transform:
+            transform_field: torch.Tensor = self.simulator(moving_image)
+            transformed_image: torch.Tensor = self.stn(moving_image, transform_field)
+            transformed_seg: torch.Tensor = self.stn(moving_seg, transform_field)
+
+            # remove batched dimension
+            transformed_image = transformed_image.squeeze().unsqueeze(0)
+            transformed_seg = transformed_seg.squeeze().unsqueeze(0)
+
+            return (moving_image, moving_seg, target_image, target_seg, transform_field, transformed_image, transformed_seg)
 
         return moving_image, moving_seg, target_image, target_seg
 
