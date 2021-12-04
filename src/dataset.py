@@ -1,12 +1,12 @@
 import logging
 import os
 from pathlib import Path
-import sys
-from typing import Dict, List, Optional, Tuple, Union
+import random
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import torchio as tio
 
 from components import *
@@ -39,7 +39,6 @@ class ImageDataset(Dataset):
         target_shape: Tuple[int, int, int],
         prob_same: float = 0.0,
         resize: bool = False,
-        registration_simulator: Optional[RegistrationSimulator3D] = None,
     ):
         super().__init__()
         self.path_to_images = path_to_images
@@ -52,12 +51,7 @@ class ImageDataset(Dataset):
             self.size_fn = tio.CropOrPad(target_shape, padding_mode=0)
             logging.info("Cropping/padding images")
 
-        self.registration_simulator = registration_simulator
-
         self.rescale = tio.RescaleIntensity()
-        self.stn = (
-            SpatialTransformer(target_shape) if self.registration_simulator else None
-        )
 
         self.images: List[Union[str, torch.Tensor]] = [
             i for i in self.files_generator(path_to_images)
@@ -114,110 +108,17 @@ class ImageDataset(Dataset):
             self.images[index] = processed
 
         return processed
-        # NOTE: the returned tensor should have shape 1, 1, *target_shape
-        # for this reason, we unsqueeze here
-        # return processed.unsqueeze(0)
 
     def __getitem__(self, index: int):
-        data: Dict[str, Dict[str, torch.Tensor]] = {
-            "moving": {},
-            "another": {},
-        }
-
         moving_image = self.process(self.images[index], index)
         moving_seg = self.process(self.segs[index], index, is_seg=True)
 
-        next_index = (index + 1) % len(self)
-        # next_index = index if random.random() < self.prob_same else random.randint(0, len(self)-1)
-        another_image = self.process(self.images[next_index], index)
-        another_seg = self.process(self.segs[next_index], index, is_seg=True)
+        next_index = random.randint(0, len(self) - 1)
+        target_image = self.process(self.images[next_index], index)
+        target_seg = self.process(self.segs[next_index], index, is_seg=True)
 
-        data["moving"]["image"] = moving_image
-        data["moving"]["seg"] = moving_seg
-        data["another"]["image"] = another_image
-        data["another"]["seg"] = another_seg
-        # data["another"]["concat"] = torch.cat((moving_image, another_image), dim=0)
-
-        if self.registration_simulator is not None and self.stn is not None:
-            data["transform"] = {}
-
-            transform = self.registration_simulator(
-                tio.ScalarImage(tensor=moving_image)
-            )
-            # NOTE: Transform needs to have shape 1, 3, *target_shape
-            transform = transform.squeeze().unsqueeze(0)
-            transformed_image = self.stn(moving_image, transform)
-            transformed_seg = self.stn(moving_seg, transform)
-            # concat_transform = torch.cat((moving_image, transformed_image), dim=0)
-
-            data["transform"]["image"] = transformed_image
-            data["transform"]["seg"] = transformed_seg
-            data["transform"]["field"] = transform
-            # data["transform"]["concat"] = concat_transform
-
-        return data
+        return moving_image, moving_seg, target_image, target_seg
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        print(f"Usage: {sys.argv[0]} <imagedir> <segdir> <target_shape_int> <action>")
-        exit("0")
-
-    shape = int(sys.argv[3])
-    tshape = (shape, shape, shape)
-    path_to_images, path_to_segs, target_shape = (
-        sys.argv[1],
-        sys.argv[2],
-        tshape,
-    )
-    action = "time" if len(sys.argv) < 5 else sys.argv[4]
-    if action not in ("time", "dataloader"):
-        raise ValueError("Incorrect parameter for value")
-    if action == "time":
-
-        # print("*"*50 + "\nWithout transforms")
-        # dataset = ImageDataset(
-        #     Path(path_to_images),
-        #     Path(path_to_segs),
-        #     target_shape=target_shape,
-        #     resize=False,
-        # )
-        #
-        # import timeit
-        # time_init = timeit.timeit(lambda: [dataset[i] for i in range(len(dataset))], number=1)
-        # time_cache = timeit.timeit(lambda: [dataset[i] for i in range(len(dataset))], number=1)
-        # print("Init time: ", time_init)
-        # print("Cache time: ", time_cache)
-
-        print("*" * 50 + "\nWith transforms")
-        dataset = ImageDataset(
-            Path(path_to_images),
-            Path(path_to_segs),
-            target_shape=target_shape,
-            registration_simulator=RegistrationSimulator3D(),
-            resize=False,
-        )
-
-        import timeit
-
-        time_init = timeit.timeit(
-            lambda: [dataset[i] for i in range(len(dataset))], number=1
-        )
-        time_cache = timeit.timeit(
-            lambda: [dataset[i] for i in range(len(dataset))], number=1
-        )
-        print("Init time: ", time_init)
-        print("Cache time: ", time_cache)
-
-    if action == "dataloader":
-        dataset = ImageDataset(
-            Path(path_to_images),
-            Path(path_to_segs),
-            target_shape=target_shape,
-            resize=False,
-        )
-
-        dataloader = DataLoader(dataset, shuffle=True)
-        for _ in dataloader:
-            pass
-        print("Completed a single epoch through the dataset with a dataloader")
+    pass

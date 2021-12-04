@@ -9,8 +9,6 @@ import torch
 import logging
 import torch.nn.functional as F
 
-__all__ = ["NeurRegLoss", "VoxelMorphLoss"]
-
 
 class VoxelMorphLoss(torch.nn.Module):
     """
@@ -131,50 +129,6 @@ class Dice:
         return -dice
 
 
-class NeurRegLoss(torch.nn.Module):
-    """
-
-    The default window size is the default for the hippocampus dataset as per the paper
-    The loss function only supports 3D inputs.
-
-    Parameters:
-    ----------
-    λ: float
-        Weighting for the similarity (cross correlation) loss
-    β: float
-        Weighting for the segmentation loss
-    window_size: Tuple[int,int,int]
-        Window size for computing the cross-correlation
-    use_cuda: bool
-        Set to True to use cuda
-    """
-
-    def __init__(
-        self, λ, β, window_size: Tuple[int, int, int] = (5, 5, 5), use_cuda=False
-    ):
-        self.λ = λ
-        self.β = β
-        self.window_size = window_size
-        self.use_cuda = use_cuda
-
-    def __call__(
-        self, F_0, F_0g, I_0, I_0R, I_1, I_1R, S_0, S_0g, S_1, S_1g
-    ) -> torch.Tensor:
-        return (
-            registration_field_loss(F_0, F_0g)
-            + self.λ
-            * (
-                local_cross_correlation_loss3D(
-                    I_0, I_0R, self.window_size, self.use_cuda
-                )
-                + local_cross_correlation_loss3D(
-                    I_1, I_1R, self.window_size, self.use_cuda
-                )
-            )
-            + self.β * (tversky_loss2(S_0, S_0g) + tversky_loss2(S_1, S_1g))
-        )
-
-
 def registration_field_loss(reg_gt: torch.Tensor, reg_pred: torch.Tensor) -> float:
     """
     Computes the registration field loss (L_f)
@@ -183,7 +137,7 @@ def registration_field_loss(reg_gt: torch.Tensor, reg_pred: torch.Tensor) -> flo
     assert reg_gt.shape == reg_pred.shape
 
     Ω = torch.prod(torch.tensor(reg_gt.shape))
-    return (1 / Ω) * torch.norm(reg_pred - reg_gt)
+    return (1 / (Ω + 1e-5)) * torch.norm(reg_pred - reg_gt)
 
 
 def local_cross_correlation_loss3D(
