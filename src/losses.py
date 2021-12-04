@@ -133,7 +133,7 @@ def registration_field_loss(reg_gt: torch.Tensor, reg_pred: torch.Tensor) -> flo
     """
     Computes the registration field loss (L_f)
     """
-    # reg_gt, reg_pred = reg_gt.squeeze(), reg_pred.squeeze()
+    reg_gt, reg_pred = reg_gt.squeeze(), reg_pred.squeeze()
     assert reg_gt.shape == reg_pred.shape
 
     Ω = torch.prod(torch.tensor(reg_gt.shape))
@@ -143,8 +143,8 @@ def registration_field_loss(reg_gt: torch.Tensor, reg_pred: torch.Tensor) -> flo
 def local_cross_correlation_loss3D(
     image_gt: torch.Tensor,
     image_pred: torch.Tensor,
-    window_size: Tuple[int, int, int],
     use_cuda: bool,
+    window_size: Tuple[int, int, int]=(5,5,5),
 ) -> torch.Tensor:
     """
     Computes the local cross correlation loss (L_sim)

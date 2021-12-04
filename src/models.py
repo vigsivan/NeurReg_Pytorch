@@ -5,7 +5,6 @@ from typing import (
     Tuple,
 )
 
-import numpy as np
 import torch
 from torch.nn import (
     Module,
@@ -87,44 +86,37 @@ class NeurRegNet(Module):
         -------
         outputs: NeurRegOutputs
         """
-        inference = transform_field is None
 
         image_concat = torch.cat((moving_image, target_image), 1)
         moving_to_target_field = self.to_flow_field(self.N(image_concat))
         moving_to_target_image = self.stn(moving_image, moving_to_target_field)
         moving_to_target_seg = self.stn(moving_seg, moving_to_target_field)
 
+        transformed_image: torch.Tensor = self.stn(moving_image, transform_field)
+        transformed_seg: torch.Tensor = self.stn(moving_seg, transform_field)
+        transform_concat = torch.cat((moving_image, transformed_image), 1)
+
+        last_layer = self.N(transform_concat)  # cache last layer for boosting
+        moving_to_precomputed_field = self.to_flow_field(last_layer)
+        moving_to_precomputed_image = self.stn(
+            moving_image, moving_to_precomputed_field
+        )
+        moving_to_precomputed_segmentation = self.stn(
+            moving_seg, moving_to_precomputed_field
+        )
+        # Concatenate along the channel dimension
+        boosted = torch.cat((last_layer, moving_to_precomputed_segmentation), dim=1)
+        boosted_segmentation = self.conv_w_softmax(boosted)
+
         outputs = NeurRegOutputs(
             moving_to_target_field=moving_to_target_field,
             moving_to_target_image=moving_to_target_image,
             moving_to_target_segmentation=moving_to_target_seg,
-            moving_to_precomputed_field=torch.empty(),
-            moving_to_precomputed_image=torch.empty(),
-            moving_to_precomputed_segmentation=torch.empty(),
-            precomputed_image=torch.empty(),
-            precomputed_segmentation=torch.empty(),
+            moving_to_precomputed_field=moving_to_precomputed_field,
+            moving_to_precomputed_image=moving_to_precomputed_image,
+            moving_to_precomputed_segmentation=boosted_segmentation,
+            precomputed_image=transformed_image,
+            precomputed_segmentation=transformed_seg,
         )
-
-        if not inference:
-            transformed_image: torch.Tensor = self.stn(moving_image, transform_field)
-            transformed_seg: torch.Tensor = self.stn(moving_seg, transform_field)
-            transform_concat = torch.cat((moving_image, transformed_image), 1)
-
-            last_layer = self.N(transform_concat)  # cache last layer for boosting
-            moving_to_precomputed_field = self.to_flow_field(last_layer)
-            moving_to_precomputed_image = self.stn(
-                moving_image, moving_to_precomputed_field
-            )
-            moving_to_precomputed_segmentation = self.stn(
-                moving_seg, moving_to_precomputed_field
-            )
-            boosted = torch.cat((last_layer, moving_to_precomputed_segmentation), dim=0)
-            boosted_segmentation = self.conv_w_softmax(boosted)
-
-            outputs.moving_to_precomputed_field = moving_to_precomputed_field
-            outputs.moving_to_precomputed_image = moving_to_precomputed_image
-            outputs.moving_to_precomputed_segmentation = boosted_segmentation
-            outputs.precomputed_segmentation = transformed_seg
-            outputs.precomputed_image = transformed_image
 
         return outputs

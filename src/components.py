@@ -199,8 +199,16 @@ class SpatialTransformer(nn.Module):
         # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
         self.register_buffer("grid", grid)
 
+    def __ensure_correct_shape(self, src, flow_field):
+        if flow_field.shape != self.grid.shape:
+            flow_field = flow_field.squeeze().unsqueeze(0)
+        if len(src.shape) != 4:
+            src = src.squeeze().unsqueeze(0)
+        return src, flow_field
+
     def forward(self, src, flow):
         # new locations
+        src, flow = self.__ensure_correct_shape(src, flow)
         new_locs = self.grid + flow
         shape = flow.shape[2:]
 
@@ -316,7 +324,14 @@ class RegistrationSimulator3D:
             torch.FloatTensor
         )
 
-    def __call__(self, image: tio.ScalarImage) -> torch.Tensor:
+    def __call__(self, image: Union[torch.Tensor, tio.ScalarImage]) -> torch.Tensor:
+        if isinstance(image, torch.Tensor):
+            # FIXME
+            # Assuming 3D image with shape (1, 1, d, w, h) or (1, d, w, h)
+            if image.shape != 4:
+                image = image.squeeze().unsqueeze(0)
+            image = tio.ScalarImage(tensor=image)
+
         return self.generate_random_transform_tensors(image)
 
 

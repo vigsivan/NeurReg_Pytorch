@@ -6,6 +6,7 @@ from tqdm import trange, tqdm
 from dataset import ImageDataset
 from components import *
 from torch.utils.tensorboard import SummaryWriter
+import torchio as tio
 import logging
 import torch
 
@@ -52,6 +53,7 @@ def main(params):
     simulator = RegistrationSimulator3D()
     model = NeurRegNet(params.target_shape)
     optimizer = torch.optim.Adam(model.parameters(), lr=params.lr)
+    tsum = lambda t: t[0] + t[1]
 
     epochs = params.epochs
     total_steps = 0
@@ -77,12 +79,12 @@ def main(params):
             )
 
             l_image = lambda p: local_cross_correlation_loss3D(
-                *p, window_size=params.window_size, use_cuda=True
+                *p, use_cuda="cuda" in params.device
             )
 
             field_loss = registration_field_loss(*field_pair)
-            image_loss = torch.sum(*[l_image(p) for p in image_pairs])
-            seg_loss = torch.sum(*[tversky_loss2(*p) for p in seg_pairs])
+            image_loss = tsum([l_image(p) for p in image_pairs])
+            seg_loss = tsum([tversky_loss2(*p) for p in seg_pairs])
 
             loss = (
                 field_loss
@@ -117,7 +119,7 @@ def get_params() -> Namespace:
     add_arg("imagedir", type=Path)
     add_arg("segdir", type=Path)
 
-    add_arg("--target_shape", type=int, nargs="+", default=128, required=False)
+    add_arg("--target_shape", type=int, nargs="+", default=(128), required=False)
     add_arg(
         "--shape_op", type=str, choices=("resize", "pad"), required=False, default="pad"
     )
