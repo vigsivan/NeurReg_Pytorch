@@ -117,22 +117,22 @@ def get_params() -> Namespace:
     add_arg("imagedir", type=Path)
     add_arg("segdir", type=Path)
 
-    add_arg("--target_shape", type=int, nargs="+", default=128, required=False)
+    add_arg("--target-shape", type=int, nargs="+", default=128, required=False)
     add_arg(
-        "--shape_op", type=str, choices=("resize", "pad"), required=False, default="pad"
+        "--shape-op", type=str, choices=("resize", "pad"), required=False, default="pad"
     )
     add_arg("--device", type=str, required=False, default="cpu")
-    add_arg("--num_gpus", type=int, required=False, default=0)
-    add_arg("--num_workers", type=int, required=False, default=4)
+    add_arg("--num-gpus", type=int, required=False, default=0)
+    add_arg("--num-workers", type=int, required=False, default=4)
     add_arg("--epochs", type=int, required=False, default=1500)
-    add_arg("--batch_size", type=int, required=False, default=1)
+    add_arg("--batch-size", type=int, required=False, default=1)
     add_arg("--lr", type=float, required=False, default=1e-3)
-    add_arg("--cross_corr_loss_weight", type=float, required=False, default=10.0)
+    add_arg("--cross-corr-loss-weight", type=float, required=False, default=10.0)
     add_arg("--seg_loss_weight", type=float, required=False, default=10.0)
 
     add_arg("--logdir", type=Path, required=False, default="../logging")
-    add_arg("--experiment_name", type=str, required=False, default="experiment1")
-    add_arg("--epochs_per_save", type=int, required=False, default=2)
+    add_arg("--experiment-name", type=str, required=False, default="experiment1")
+    add_arg("--epochs-per-save", type=int, required=False, default=2)
 
     params = parser.parse_args()
     params.checkpoint = params.experiment_name + "_checkpoint.pt"

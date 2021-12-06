@@ -26,13 +26,18 @@ import random
 import SimpleITK as sitk
 import numpy as np
 import torch
-import torchio as tio
+
+# import torchio as tio
 from torch import nn
 import torch.nn.functional as F
 
 __all__ = ["SpatialTransformer", "Unet3D", "RegistrationSimulator3D"]
 
 default_encoder_decoder_features = [[16, 32, 32, 32], [32, 32, 32, 32, 16, 16]]
+
+
+def U(umin, umax):
+    return np.random.choice(np.linspace(umin, umax, 100)).item()
 
 
 class Unet3D(nn.Module):
@@ -231,6 +236,7 @@ class RegistrationSimulator3D:
 
     def __init__(
         self,
+        spatial_shape: Tuple[int, int, int],
         rotation_min: Union[float, Tuple[float, float, float]] = 0.0,
         rotation_max: Union[float, Tuple[float, float, float]] = 30.0,
         scale_min: Union[float, Tuple[float, float, float]] = 0.75,
@@ -243,6 +249,7 @@ class RegistrationSimulator3D:
 
         super().__init__()
         self.ndims = 3
+        self.spatial_shape = spatial_shape
         self.rotation_min = self.__tuplify(rotation_min)
         self.rotation_max = self.__tuplify(rotation_max)
         self.scale_min = self.__tuplify(scale_min)
@@ -269,16 +276,16 @@ class RegistrationSimulator3D:
             return (x[0], x[1], x[2])
         return (x, x, x)
 
-    def generate_random_transform_tensors(self, image: tio.ScalarImage) -> torch.Tensor:
-        """
-        Generates new transforms
-        """
-
-        U = lambda umin, umax: np.random.choice(np.linspace(umin, umax, 100)).item()
-
+    def __get_scale_transform(self) -> sitk.ScaleTransform:
         scales = self.__tuplify(
             tuple([U(smin, smax) for smin, smax in zip(self.scale_min, self.scale_max)])
         )
+        transform = sitk.ScaleTransform(self.ndims)
+        transform.SetScale(np.asarray(scales))
+
+        return transform
+
+    def __get_rot_trans_transform(self) -> sitk.Euler3DTransform:
         rotations = self.__tuplify(
             tuple(
                 [
@@ -287,43 +294,79 @@ class RegistrationSimulator3D:
                 ]
             )
         )
+
+        radians = np.deg2rad(rotations)
+
         tfs = [U(-i, i) for i in self.translation_factor]
         translation = self.__tuplify(
-            tuple([image.spatial_shape[i] * tf for i, tf in enumerate(tfs)])
+            tuple([self.spatial_shape[i] * tf for i, tf in enumerate(tfs)])
         )
 
-        # TODO: using tio's elastic deformation field instead
-        # need to evaluate this effect of doing this instead of doing convolution on cpu
-        elastic_cps = tio.RandomElasticDeformation.get_params(
-            num_control_points=(7, 7, 7),
-            max_displacement=translation,
-            num_locked_borders=2,
-        )
-        elastic = tio.ElasticDeformation(
-            control_points=elastic_cps, max_displacement=translation
-        )
-        elastic_sitk = elastic.get_bspline_transform(image.as_sitk())
-        affine = tio.Affine(
-            scales=scales, degrees=rotations, translation=translation
-        ).get_affine_transform(image)
+        transform = sitk.Euler3DTransform()
+        transform.SetTranslation(translation)
+        transform.SetRotation(*radians)
 
-        composite = sitk.CompositeTransform([elastic_sitk, affine])
+        return transform
 
-        t2df = sitk.TransformToDisplacementFieldFilter()
-        t2df.SetReferenceImage(image.as_sitk())
-        displacement_field = t2df.Execute(composite)
-        return tio.ScalarImage.from_sitk(displacement_field).data.type(
-            torch.FloatTensor
+    def __get_elastic_transform(self) -> sitk.DisplacementFieldTransform:
+        offset_std = U(0, self.offset_gaussian_std_max)
+        smoothed_offset_field = np.zeros((self.ndims, *self.spatial_shape))
+        smoothing_std = U(
+            self.smoothing_gaussian_std_min, self.smoothing_gaussian_std_max
+        )
+        smoothing_filter = sitk.SmoothingRecursiveGaussianImageFilter()
+        smoothing_filter.SetSigma(smoothing_std)
+        for i in range(self.ndims):
+            offset_i = np.random.normal(0, offset_std, size=self.spatial_shape)
+            offset_sitk = sitk.GetImageFromArray(offset_i, isVector=False)
+            smoothed_offset_i = smoothing_filter.Execute(offset_sitk)
+            smoothed_offset_field[i] = sitk.GetArrayFromImage(smoothed_offset_i)
+
+        smoothing_filter.Execute
+
+        smoothed_offset_sitk = sitk.GetImageFromArray(
+            smoothed_offset_field.T, isVector=True
         )
 
-    def __call__(self, image: tio.ScalarImage) -> torch.Tensor:
-        return self.generate_random_transform_tensors(image)
+        elastic_distortion = sitk.DisplacementFieldTransform(smoothed_offset_sitk)
+
+        return elastic_distortion
+
+    def generate_random_transform(self) -> sitk.CompositeTransform:
+        """
+        Generates new transforms
+        """
+
+        scale = self.__get_scale_transform()
+        rot_trans = self.__get_rot_trans_transform()
+        elastic = self.__get_elastic_transform()
+
+        composite = sitk.CompositeTransform([elastic, rot_trans, scale])
+        return composite
+
+    def __call__(self, image: str, ret_arr=True) -> Union[sitk.Image, np.ndarray]:
+        sitk_image = sitk.ReadImage(image)
+        transform = self.generate_random_transform()
+        resampler = sitk.ResampleImageFilter()
+        resampler.SetTransform(transform)
+        resampler.SetInterpolator(sitk.sitkLinear)
+        resampler.SetReferenceImage(sitk_image)
+        resampler.SetDefaultPixelValue(float(0))
+        resampler.SetOutputPixelType(sitk.sitkFloat32)
+        resampler.SetTransform(transform)
+        transformed_image = resampler.Execute(sitk_image)
+        if ret_arr:
+            return sitk.GetArrayFromImage(transformed_image).T
+        else:
+            return transformed_image
 
 
 if __name__ == "__main__":
-    random.seed(42)
-    np.random.seed(42)
+    # random.seed(42)
+    # np.random.seed(42)
 
-    image = tio.ScalarImage("../data/test_image.nii.gz")
-    simulator = RegistrationSimulator3D()
-    affine_tensor, elastic_offset, smoothing_kernel = simulator(image)
+    image = "./sub-milan02_T1w.nii.gz"
+    simulator = RegistrationSimulator3D((128, 128, 128))
+    transformed_image = simulator(image, ret_arr=False)
+    assert isinstance(transformed_image, sitk.Image)
+    sitk.WriteImage(transformed_image, "transformed.nii.gz")
