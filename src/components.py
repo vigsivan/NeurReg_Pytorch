@@ -26,6 +26,7 @@ import random
 import SimpleITK as sitk
 import numpy as np
 import torch
+import sys
 
 # import torchio as tio
 from torch import nn
@@ -204,8 +205,16 @@ class SpatialTransformer(nn.Module):
         # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
         self.register_buffer("grid", grid)
 
+    def __ensure_correct_shape(self, src, flow_field):
+        if flow_field.shape != self.grid.shape:
+            flow_field = flow_field.squeeze().unsqueeze(0)
+        if len(src.shape) != 4:
+            src = src.squeeze().unsqueeze(0)
+        return src, flow_field
+
     def forward(self, src, flow):
         # new locations
+        src, flow = self.__ensure_correct_shape(src, flow)
         new_locs = self.grid + flow
         shape = flow.shape[2:]
 
@@ -329,7 +338,6 @@ class RegistrationSimulator3D:
         )
 
         elastic_distortion = sitk.DisplacementFieldTransform(smoothed_offset_sitk)
-
         return elastic_distortion
 
     def generate_random_transform(self) -> sitk.CompositeTransform:
@@ -362,11 +370,14 @@ class RegistrationSimulator3D:
 
 
 if __name__ == "__main__":
-    # random.seed(42)
-    # np.random.seed(42)
+    random.seed(42)
+    np.random.seed(42)
 
-    image = "./sub-milan02_T1w.nii.gz"
+    if len(sys.argv) != 3:
+        print(f"Usage {sys.argv[0]} <image> <transformed>")
+
+    image = sys.argv[1]
     simulator = RegistrationSimulator3D((128, 128, 128))
     transformed_image = simulator(image, ret_arr=False)
     assert isinstance(transformed_image, sitk.Image)
-    sitk.WriteImage(transformed_image, "transformed.nii.gz")
+    sitk.WriteImage(transformed_image, sys.argv[2])

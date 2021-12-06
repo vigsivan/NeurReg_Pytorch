@@ -28,6 +28,7 @@ def get_dataloader(params) -> DataLoader:
         params.imagedir,
         params.segdir,
         target_shape=params.target_shape,
+        transform=params.transform_cpu,
         resize=params.shape_op == "resize",
     )
 
@@ -50,19 +51,44 @@ def main(params):
     writer = SummaryWriter(params.logdir)
 
     simulator = RegistrationSimulator3D()
-    model = NeurRegNet(params.target_shape)
+    model = NeurRegNet(params.target_shape, transform_inputs=not params.transform_cpu)
     optimizer = torch.optim.Adam(model.parameters(), lr=params.lr)
+    tsum = lambda t: t[0] + t[1]
 
     epochs = params.epochs
     total_steps = 0
     for epoch in trange(epochs):
         steps = 0
         epoch_loss = 0
-        for _, (mov_im, mov_seg, targ_im, targ_seg) in tqdm(enumerate(dataloader)):
+        for _, data in tqdm(enumerate(dataloader)):
             steps += 1
-            transform = simulator(mov_im)
             optimizer.zero_grad()
-            outputs = model(mov_im, mov_seg, targ_im, transform)
+
+            if not params.transform_cpu:
+                (mov_im, mov_seg, targ_im, targ_seg) = data
+                transform = simulator(mov_im)
+                outputs = model(mov_im, mov_seg, targ_im, transform)
+
+            else:
+                (
+                    mov_im,
+                    mov_seg,
+                    targ_im,
+                    targ_seg,
+                    transform,
+                    transformed_image,
+                    transformed_seg,
+                ) = data
+
+                outputs = model(
+                    mov_im,
+                    mov_seg,
+                    targ_im,
+                    transform,
+                    transformed_image,
+                    transformed_seg,
+                )
+
             field_pair = (transform, outputs.moving_to_precomputed_field)
             image_pairs = (
                 (outputs.precomputed_image, outputs.moving_to_precomputed_image),
@@ -77,12 +103,12 @@ def main(params):
             )
 
             l_image = lambda p: local_cross_correlation_loss3D(
-                *p, window_size=params.window_size, use_cuda=True
+                *p, use_cuda="cuda" in params.device
             )
 
             field_loss = registration_field_loss(*field_pair)
-            image_loss = torch.sum(*[l_image(p) for p in image_pairs])
-            seg_loss = torch.sum(*[tversky_loss2(*p) for p in seg_pairs])
+            image_loss = tsum([l_image(p) for p in image_pairs])
+            seg_loss = tsum([tversky_loss2(*p) for p in seg_pairs])
 
             loss = (
                 field_loss
@@ -117,7 +143,7 @@ def get_params() -> Namespace:
     add_arg("imagedir", type=Path)
     add_arg("segdir", type=Path)
 
-    add_arg("--target-shape", type=int, nargs="+", default=128, required=False)
+    add_arg("--target_shape", type=int, nargs="+", default=(128), required=False)
     add_arg(
         "--shape-op", type=str, choices=("resize", "pad"), required=False, default="pad"
     )
@@ -131,8 +157,11 @@ def get_params() -> Namespace:
     add_arg("--seg_loss_weight", type=float, required=False, default=10.0)
 
     add_arg("--logdir", type=Path, required=False, default="../logging")
-    add_arg("--experiment-name", type=str, required=False, default="experiment1")
-    add_arg("--epochs-per-save", type=int, required=False, default=2)
+    add_arg("--experiment_name", type=str, required=False, default="experiment1")
+    add_arg("--epochs_per_save", type=int, required=False, default=2)
+    add_arg(
+        "--transform-cpu", help="Compute transforms on the cpu", action="store_true"
+    )
 
     params = parser.parse_args()
     params.checkpoint = params.experiment_name + "_checkpoint.pt"
