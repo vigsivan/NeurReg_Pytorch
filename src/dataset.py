@@ -43,7 +43,6 @@ class ImageDataset(Dataset):
         self.path_to_images = path_to_images
         self.path_to_segmentations = path_to_segmentations
 
-        self.simulator: RegistrationSimulator3D
         self.stn = SpatialTransformer(target_shape)
 
         if resize:
@@ -62,10 +61,9 @@ class ImageDataset(Dataset):
             i for i in self.files_generator(path_to_segmentations)
         ]
 
-        self.reference = sitk.ReadImage(str(self.images[0]))
-        self.reference = sitk.GetArrayFromImage(self.reference)
-        self.reference = sitk.GetImageFromArray(self.reference)
-        self.simulator = RegistrationSimulator3D(self.reference, target_shape)
+        reference_tio = tio.ScalarImage(str(self.images[0]))
+        reference = self.size_fn(reference_tio).as_sitk()
+        self.simulator = RegistrationSimulator3D(reference, target_shape)
 
         self.data_consistency()
 
