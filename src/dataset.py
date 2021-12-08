@@ -4,7 +4,8 @@ from pathlib import Path
 import random
 from typing import List, Tuple, Union
 
-import numpy as np
+import sys
+import SimpleITK as sitk
 import torch
 from torch.utils.data import Dataset
 import torchio as tio
@@ -37,15 +38,13 @@ class ImageDataset(Dataset):
         path_to_images: Path,
         path_to_segmentations: Path,
         target_shape: Tuple[int, int, int],
-        transform: bool = True,
-        resize: bool = False,
+        resize: bool = True,
     ):
         super().__init__()
         self.path_to_images = path_to_images
         self.path_to_segmentations = path_to_segmentations
 
-        self.transform = transform
-        self.simulator = RegistrationSimulator3D()
+        self.simulator: RegistrationSimulator3D
         self.stn = SpatialTransformer(target_shape)
 
         if resize:
@@ -64,11 +63,16 @@ class ImageDataset(Dataset):
             i for i in self.files_generator(path_to_segmentations)
         ]
 
+        self.reference = sitk.ReadImage(str(self.images[0]))
+        self.reference = sitk.GetArrayFromImage(self.reference)
+        self.reference = sitk.GetImageFromArray(self.reference)
+        self.simulator = RegistrationSimulator3D(self.reference, target_shape)
+
         self.data_consistency()
 
     def files_generator(self, dir: Path):
         dir_files = [
-            i
+            str(dir / i)
             for i in os.listdir(dir)
             if i.endswith(".nii.gz") and i[0] != "." and "sub" in i
         ]
@@ -84,26 +88,19 @@ class ImageDataset(Dataset):
                 sim, sse = str(i), str(s)
                 raise Exception(f"Image file and seg file don't match: {sim} vs {sse}")
 
-    def __iter__(self):
-        indices = np.arange(0, len(self))
-        np.random.shuffle(indices)
-        self.images = [self.images[i] for i in indices]
-        self.segs = [self.segs[i] for i in indices]
-        return self
-
     def __len__(self):
         return len(self.images)
 
     def process(
         self, x: Union[str, torch.Tensor], index: int, is_seg: bool = False
     ) -> torch.Tensor:
+        """
+        Our strategy is to cache the processed images so we need an early-exit
+        if already cached.
+        """
         if isinstance(x, torch.Tensor):
             return x
-        if is_seg:
-            x_tio = tio.LabelMap(self.path_to_segmentations / x)
-        else:
-            x_tio = tio.ScalarImage(self.path_to_images / x)
-
+        x_tio = tio.LabelMap(x) if is_seg else tio.ScalarImage(x)
         x_tensor = x_tio.data.squeeze().unsqueeze(0)
         processed = torch.Tensor(self.rescale(self.size_fn(x_tensor))).float()
         if is_seg:
@@ -121,27 +118,37 @@ class ImageDataset(Dataset):
         target_image = self.process(self.images[next_index], index)
         target_seg = self.process(self.segs[next_index], index, is_seg=True)
 
-        if self.transform:
-            transform_field: torch.Tensor = self.simulator(moving_image)
-            transformed_image: torch.Tensor = self.stn(moving_image, transform_field)
-            transformed_seg: torch.Tensor = self.stn(moving_seg, transform_field)
+        transform_field = self.simulator.get_displacement_tensor().float()
+        transformed_image: torch.Tensor = self.stn(
+            moving_image.unsqueeze(0), transform_field
+        )
+        transformed_seg: torch.Tensor = self.stn(
+            moving_seg.unsqueeze(0), transform_field
+        )
+        transformed_image = transformed_image
+        transformed_seg = transformed_seg.squeeze().unsqueeze(0)
 
-            # remove batched dimension
-            transformed_image = transformed_image.squeeze().unsqueeze(0)
-            transformed_seg = transformed_seg.squeeze().unsqueeze(0)
-
-            return (
-                moving_image,
-                moving_seg,
-                target_image,
-                target_seg,
-                transform_field,
-                transformed_image,
-                transformed_seg,
-            )
-
-        return moving_image, moving_seg, target_image, target_seg
+        return (
+            moving_image,
+            moving_seg,
+            target_image,
+            target_seg,
+            transform_field,
+            transformed_image,
+            transformed_seg,
+        )
 
 
 if __name__ == "__main__":
-    pass
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <path_to_images> <path_to_segmentations>")
+    p2ims, p2segs = Path(sys.argv[1]), Path(sys.argv[2])
+    dataset = ImageDataset(p2ims, p2segs, target_shape=(128, 128, 128), resize=True)
+    index = random.randint(0, len(dataset) - 1)
+    outs = dataset[index]
+    transformed = sitk.GetImageFromArray(outs[-2].numpy())
+    transform = sitk.GetImageFromArray(outs[4].numpy())
+    moving = sitk.GetImageFromArray(outs[0].squeeze().numpy())
+    sitk.WriteImage(moving, "moving.nii.gz")
+    sitk.WriteImage(transformed, "transformed.nii.gz")
+    sitk.WriteImage(transform, "transform.nii.gz")

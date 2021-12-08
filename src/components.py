@@ -205,18 +205,10 @@ class SpatialTransformer(nn.Module):
         # see: https://discuss.pytorch.org/t/how-to-register-buffer-without-polluting-state-dict
         self.register_buffer("grid", grid)
 
-    def __ensure_correct_shape(self, src, flow_field):
-        if flow_field.shape != self.grid.shape:
-            flow_field = flow_field.squeeze().unsqueeze(0)
-        if len(src.shape) != 4:
-            src = src.squeeze().unsqueeze(0)
-        return src, flow_field
-
     def forward(self, src, flow):
         # new locations
-        src, flow = self.__ensure_correct_shape(src, flow)
         new_locs = self.grid + flow
-        shape = flow.shape[2:]
+        shape = new_locs.shape[2:]
 
         # need to normalize grid values to [-1, 1] for resampler
         for i in range(len(shape)):
@@ -231,7 +223,6 @@ class SpatialTransformer(nn.Module):
             new_locs = new_locs.permute(0, 2, 3, 4, 1)
             new_locs = new_locs[..., [2, 1, 0]]
 
-        src = src.unsqueeze(0)
         return F.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
 
@@ -241,10 +232,12 @@ class RegistrationSimulator3D:
     The elastic deformation is using bspline registration.
 
     Note: the rotation parameter is in degrees.
+    Note: this class does not save transforms
     """
 
     def __init__(
         self,
+        reference_image: sitk.Image,
         spatial_shape: Tuple[int, int, int],
         rotation_min: Union[float, Tuple[float, float, float]] = 0.0,
         rotation_max: Union[float, Tuple[float, float, float]] = 30.0,
@@ -257,6 +250,7 @@ class RegistrationSimulator3D:
     ):
 
         super().__init__()
+        self.reference_image = reference_image
         self.ndims = 3
         self.spatial_shape = spatial_shape
         self.rotation_min = self.__tuplify(rotation_min)
@@ -352,21 +346,21 @@ class RegistrationSimulator3D:
         composite = sitk.CompositeTransform([elastic, rot_trans, scale])
         return composite
 
-    def __call__(self, image: str, ret_arr=True) -> Union[sitk.Image, np.ndarray]:
-        sitk_image = sitk.ReadImage(image)
+    def get_random_displacement_field(self) -> sitk.sitkDisplacementField:
+        """
+        Generates new displacement field filter
+        """
         transform = self.generate_random_transform()
-        resampler = sitk.ResampleImageFilter()
-        resampler.SetTransform(transform)
-        resampler.SetInterpolator(sitk.sitkLinear)
-        resampler.SetReferenceImage(sitk_image)
-        resampler.SetDefaultPixelValue(float(0))
-        resampler.SetOutputPixelType(sitk.sitkFloat32)
-        resampler.SetTransform(transform)
-        transformed_image = resampler.Execute(sitk_image)
-        if ret_arr:
-            return sitk.GetArrayFromImage(transformed_image).T
-        else:
-            return transformed_image
+        t2df = sitk.TransformToDisplacementFieldFilter()
+        t2df.SetReferenceImage(self.reference_image)
+        displacement_field = t2df.Execute(transform)
+        return displacement_field
+
+    def get_displacement_tensor(self) -> torch.Tensor:
+        df = self.get_random_displacement_field()
+        # Apparently you should transpose when going from sitk to numpy
+        df_tensor = torch.from_numpy(sitk.GetArrayFromImage(df).T)
+        return df_tensor
 
 
 if __name__ == "__main__":
@@ -374,10 +368,9 @@ if __name__ == "__main__":
     np.random.seed(42)
 
     if len(sys.argv) != 3:
-        print(f"Usage {sys.argv[0]} <image> <transformed>")
+        print(f"Usage {sys.argv[0]} <image> <displacement_field>")
 
-    image = sys.argv[1]
-    simulator = RegistrationSimulator3D((128, 128, 128))
-    transformed_image = simulator(image, ret_arr=False)
-    assert isinstance(transformed_image, sitk.Image)
-    sitk.WriteImage(transformed_image, sys.argv[2])
+    image = sitk.ReadImage(sys.argv[1])
+    simulator = RegistrationSimulator3D(image, (128, 128, 128))
+    displacement_field = simulator.get_random_displacement_field()
+    sitk.WriteImage(displacement_field, sys.argv[2])
