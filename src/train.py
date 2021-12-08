@@ -28,7 +28,6 @@ def get_dataloader(params) -> DataLoader:
         params.imagedir,
         params.segdir,
         target_shape=params.target_shape,
-        transform=params.transform_cpu,
         resize=params.shape_op == "resize",
     )
 
@@ -50,8 +49,7 @@ def main(params):
     dataloader = get_dataloader(params)
     writer = SummaryWriter(params.logdir)
 
-    simulator = RegistrationSimulator3D()
-    model = NeurRegNet(params.target_shape, transform_inputs=not params.transform_cpu)
+    model = NeurRegNet(params.target_shape)
     optimizer = torch.optim.Adam(model.parameters(), lr=params.lr)
     tsum = lambda t: t[0] + t[1]
 
@@ -63,31 +61,23 @@ def main(params):
         for _, data in tqdm(enumerate(dataloader)):
             steps += 1
             optimizer.zero_grad()
+            (
+                mov_im,
+                mov_seg,
+                targ_im,
+                targ_seg,
+                transform,
+                transformed_image,
+                transformed_seg,
+            ) = data
 
-            if not params.transform_cpu:
-                (mov_im, mov_seg, targ_im, targ_seg) = data
-                transform = simulator(mov_im)
-                outputs = model(mov_im, mov_seg, targ_im, transform)
-
-            else:
-                (
-                    mov_im,
-                    mov_seg,
-                    targ_im,
-                    targ_seg,
-                    transform,
-                    transformed_image,
-                    transformed_seg,
-                ) = data
-
-                outputs = model(
-                    mov_im,
-                    mov_seg,
-                    targ_im,
-                    transform,
-                    transformed_image,
-                    transformed_seg,
-                )
+            outputs = model(
+                mov_im,
+                mov_seg,
+                targ_im,
+                transformed_image,
+                transformed_seg,
+            )
 
             field_pair = (transform, outputs.moving_to_precomputed_field)
             image_pairs = (
@@ -102,12 +92,12 @@ def main(params):
                 (targ_seg, outputs.moving_to_target_segmentation),
             )
 
-            l_image = lambda p: local_cross_correlation_loss3D(
+            cross_corr = lambda p: local_cross_correlation_loss3D(
                 *p, use_cuda="cuda" in params.device
             )
 
             field_loss = registration_field_loss(*field_pair)
-            image_loss = tsum([l_image(p) for p in image_pairs])
+            image_loss = tsum([cross_corr(p) for p in image_pairs])
             seg_loss = tsum([tversky_loss2(*p) for p in seg_pairs])
 
             loss = (
@@ -159,9 +149,6 @@ def get_params() -> Namespace:
     add_arg("--logdir", type=Path, required=False, default="../logging")
     add_arg("--experiment_name", type=str, required=False, default="experiment1")
     add_arg("--epochs_per_save", type=int, required=False, default=2)
-    add_arg(
-        "--transform-cpu", help="Compute transforms on the cpu", action="store_true"
-    )
 
     params = parser.parse_args()
     params.checkpoint = params.experiment_name + "_checkpoint.pt"
