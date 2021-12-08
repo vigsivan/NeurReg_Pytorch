@@ -151,6 +151,7 @@ def get_params() -> Namespace:
     add_arg("--logdir", type=Path, required=False, default="../logging")
     add_arg("--experiment-name", type=str, required=False, default="experiment1")
     add_arg("--epochs_per_save", type=int, required=False, default=2)
+    add_arg("--cachedir", type=Path, required=False, default="../cache")
 
     params = parser.parse_args()
     params.checkpoint = params.experiment_name + "_checkpoint.pt"

@@ -73,7 +73,7 @@ class ImageDataset(Dataset):
         dir_files = [
             dir / i
             for i in os.listdir(dir)
-            if i.endswith(".nii.gz") and i[0] != "." and "sub" in i
+            if i.endswith(".nii.gz") and i[0] != "."
         ]
         dir_files.sort()
         yield from dir_files

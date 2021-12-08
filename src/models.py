@@ -63,7 +63,6 @@ class NeurRegNet(Module):
         self.N = Unet3D(inshape=target_shape)
         self.stn = SpatialTransformer(target_shape)
 
-        # TODO: review the to_flow_field code
         self.conv_w_softmax = Sequential(Conv3d(17, 1, 3, padding=1), Softmax(3))
         self.to_flow_field = Conv3d(16, 3, 3, padding=1, bias=True)
         self.to_flow_field.weight = Parameter(
