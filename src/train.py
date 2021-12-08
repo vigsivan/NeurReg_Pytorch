@@ -52,6 +52,8 @@ def main(params):
     model = NeurRegNet(params.target_shape)
     optimizer = torch.optim.Adam(model.parameters(), lr=params.lr)
     tsum = lambda t: t[0] + t[1]
+    torch.use_deterministic_algorithms=True
+    torch.backends.cudnn.deterministic = True
 
     epochs = params.epochs
     total_steps = 0
@@ -133,7 +135,7 @@ def get_params() -> Namespace:
     add_arg("imagedir", type=Path)
     add_arg("segdir", type=Path)
 
-    add_arg("--target_shape", type=int, nargs="+", default=(128), required=False)
+    add_arg("--target-shape", type=int, nargs="+", default=(128), required=False)
     add_arg(
         "--shape-op", type=str, choices=("resize", "pad"), required=False, default="pad"
     )
@@ -144,10 +146,10 @@ def get_params() -> Namespace:
     add_arg("--batch-size", type=int, required=False, default=1)
     add_arg("--lr", type=float, required=False, default=1e-3)
     add_arg("--cross-corr-loss-weight", type=float, required=False, default=10.0)
-    add_arg("--seg_loss_weight", type=float, required=False, default=10.0)
+    add_arg("--seg-loss_weight", type=float, required=False, default=10.0)
 
     add_arg("--logdir", type=Path, required=False, default="../logging")
-    add_arg("--experiment_name", type=str, required=False, default="experiment1")
+    add_arg("--experiment-name", type=str, required=False, default="experiment1")
     add_arg("--epochs_per_save", type=int, required=False, default=2)
 
     params = parser.parse_args()

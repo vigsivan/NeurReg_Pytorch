@@ -107,7 +107,6 @@ class NeurRegNet(Module):
 
             assert transformed_image is not None and transformed_seg is not None
             transform_concat = torch.cat((moving_image, transformed_image), 1)
-
             last_layer = self.N(transform_concat)  # cache last layer for boosting
             moving_to_precomputed_field = self.to_flow_field(last_layer)
             moving_to_precomputed_image = self.stn(
