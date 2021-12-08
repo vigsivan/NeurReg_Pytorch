@@ -55,10 +55,10 @@ class ImageDataset(Dataset):
 
         self.rescale = tio.RescaleIntensity()
 
-        self.images: List[Union[str, torch.Tensor]] = [
+        self.images: List[Union[Path, torch.Tensor]] = [
             i for i in self.files_generator(path_to_images)
         ]
-        self.segs: List[Union[str, torch.Tensor]] = [
+        self.segs: List[Union[Path, torch.Tensor]] = [
             i for i in self.files_generator(path_to_segmentations)
         ]
 
@@ -71,7 +71,7 @@ class ImageDataset(Dataset):
 
     def files_generator(self, dir: Path):
         dir_files = [
-            str(dir / i)
+            dir / i
             for i in os.listdir(dir)
             if i.endswith(".nii.gz") and i[0] != "." and "sub" in i
         ]
@@ -82,15 +82,16 @@ class ImageDataset(Dataset):
         if len(self.images) != len(self.segs):
             nim, nse = len(self.images), len(self.segs)
             raise Exception(f"Number of images and segs don't match: {nim} vs {nse}")
-        for i, s in zip(self.images, self.segs):
-            if isinstance(i, str) and isinstance(s, str) and i != s:
-                sim, sse = str(i), str(s)
-                raise Exception(f"Image file and seg file don't match: {sim} vs {sse}")
+        for image, seg in zip(self.images, self.segs):
+            if isinstance(image, Path) and isinstance(seg, Path):
+                sim, sse = image.name, seg.name
+                if sim != sse:
+                    raise Exception(f"Image file and seg file don't match: {sim} vs {sse}")
     def __len__(self):
         return len(self.images)
 
     def process(
-        self, x: Union[str, torch.Tensor], index: int, is_seg: bool = False
+        self, x: Union[Path, torch.Tensor], index: int, is_seg: bool = False
     ) -> torch.Tensor:
         """
         Our strategy is to cache the processed images so we need an early-exit
@@ -98,6 +99,7 @@ class ImageDataset(Dataset):
         """
         if isinstance(x, torch.Tensor):
             return x
+        x=str(x)
         x_tio = tio.LabelMap(x) if is_seg else tio.ScalarImage(x)
         x_tensor = x_tio.data.T.squeeze().unsqueeze(0)
         processed = torch.Tensor(self.rescale(self.size_fn(x_tensor))).float()
@@ -119,10 +121,10 @@ class ImageDataset(Dataset):
         transform_field = self.simulator.get_displacement_tensor().float()
         transformed_image: torch.Tensor = self.stn(
             moving_image.unsqueeze(0), transform_field
-        )
+        ).squeeze().unsqueeze(0)
         transformed_seg: torch.Tensor = self.stn(
             moving_seg.unsqueeze(0), transform_field
-        )
+        ).squeeze().unsqueeze(0)
         transformed_image = transformed_image
         transformed_seg = transformed_seg.squeeze().unsqueeze(0)
 

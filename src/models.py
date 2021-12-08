@@ -54,17 +54,13 @@ class NeurRegNet(Module):
     ----------
     target_shape: Tuple[int,int,int]
         The shape of the inputs
-    transform_inputs: bool
-        If True, the model transforms the inputs. If false,
-        the model expects the transformed inputs for each forward pass
     """
 
     def __init__(
-        self, target_shape: Tuple[int, int, int], transform_inputs: bool = True
+        self, target_shape: Tuple[int, int, int]
     ):
         super().__init__()
         self.N = Unet3D(inshape=target_shape)
-        self.transform_inputs = transform_inputs
         self.stn = SpatialTransformer(target_shape)
 
         # TODO: review the to_flow_field code
@@ -84,7 +80,6 @@ class NeurRegNet(Module):
         moving_image: torch.Tensor,
         moving_seg: torch.Tensor,
         target_image: torch.Tensor,
-        transform_field: Optional[torch.Tensor] = None,
         transformed_image: Optional[torch.Tensor] = None,
         transformed_seg: Optional[torch.Tensor] = None,
     ) -> Union[NeurRegTrainOutputs, NeurRegValOutputs]:
@@ -110,14 +105,8 @@ class NeurRegNet(Module):
 
         if self.training:
 
-            if self.transform_inputs:
-                assert transform_field is not None
-                transformed_image = self.stn(moving_image, transform_field)
-                transformed_seg = self.stn(moving_seg, transform_field)
-
             assert transformed_image is not None and transformed_seg is not None
             transform_concat = torch.cat((moving_image, transformed_image), 1)
-
             last_layer = self.N(transform_concat)  # cache last layer for boosting
             moving_to_precomputed_field = self.to_flow_field(last_layer)
             moving_to_precomputed_image = self.stn(
