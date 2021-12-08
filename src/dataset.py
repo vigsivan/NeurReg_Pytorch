@@ -21,7 +21,6 @@ class ImageDataset(Dataset):
 
     Parameters
     ----------
-        self,
         path_to_images: Path,
         path_to_segmentations: Path,
         target_shape: Tuple[int, int, int],
@@ -87,7 +86,6 @@ class ImageDataset(Dataset):
             if isinstance(i, str) and isinstance(s, str) and i != s:
                 sim, sse = str(i), str(s)
                 raise Exception(f"Image file and seg file don't match: {sim} vs {sse}")
-
     def __len__(self):
         return len(self.images)
 
@@ -101,7 +99,7 @@ class ImageDataset(Dataset):
         if isinstance(x, torch.Tensor):
             return x
         x_tio = tio.LabelMap(x) if is_seg else tio.ScalarImage(x)
-        x_tensor = x_tio.data.squeeze().unsqueeze(0)
+        x_tensor = x_tio.data.T.squeeze().unsqueeze(0)
         processed = torch.Tensor(self.rescale(self.size_fn(x_tensor))).float()
         if is_seg:
             self.segs[index] = processed

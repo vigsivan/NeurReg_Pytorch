@@ -264,6 +264,8 @@ class RegistrationSimulator3D:
         self.smoothing_gaussian_std_max = smoothing_gaussian_std_max
         self.offset_gaussian_std_max = offset_gaussian_std_max
 
+        self.center = [(s-1)/2 for s in spatial_shape]
+
     def __tuplify(
         self, x: Union[float, Tuple[float, ...]]
     ) -> Tuple[float, float, float]:
@@ -302,11 +304,12 @@ class RegistrationSimulator3D:
 
         tfs = [U(-i, i) for i in self.translation_factor]
         translation = self.__tuplify(
-            tuple([self.spatial_shape[i] * tf for i, tf in enumerate(tfs)])
+            tuple([U(0, self.spatial_shape[i] * tf) for i, tf in enumerate(tfs)])
         )
 
         transform = sitk.Euler3DTransform()
         transform.SetTranslation(translation)
+        transform.SetCenter(tuple(self.center))
         transform.SetRotation(*radians)
 
         return transform
@@ -339,11 +342,14 @@ class RegistrationSimulator3D:
         Generates new transforms
         """
 
-        scale = self.__get_scale_transform()
-        rot_trans = self.__get_rot_trans_transform()
-        elastic = self.__get_elastic_transform()
+        transforms = [
+            self.__get_scale_transform(),
+            self.__get_rot_trans_transform(),
+            self.__get_elastic_transform(),
+        ]
 
-        composite = sitk.CompositeTransform([elastic, rot_trans, scale])
+        # SITK transforms are applied in reverse order, so the list needs to be reversed
+        composite = sitk.CompositeTransform(transforms[::-1])
         return composite
 
     def get_random_displacement_field(self) -> sitk.sitkDisplacementField:
@@ -358,7 +364,7 @@ class RegistrationSimulator3D:
 
     def get_displacement_tensor(self) -> torch.Tensor:
         df = self.get_random_displacement_field()
-        # Apparently you should transpose when going from sitk to numpy
+        # Transpose df to get dimension (3) into the first axis
         df_tensor = torch.from_numpy(sitk.GetArrayFromImage(df).T)
         return df_tensor
 
