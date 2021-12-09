@@ -56,9 +56,7 @@ class NeurRegNet(Module):
         The shape of the inputs
     """
 
-    def __init__(
-        self, target_shape: Tuple[int, int, int]
-    ):
+    def __init__(self, target_shape: Tuple[int, int, int]):
         super().__init__()
         self.N = Unet3D(inshape=target_shape)
         self.stn = SpatialTransformer(target_shape)

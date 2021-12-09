@@ -264,7 +264,7 @@ class RegistrationSimulator3D:
         self.smoothing_gaussian_std_max = smoothing_gaussian_std_max
         self.offset_gaussian_std_max = offset_gaussian_std_max
 
-        self.center = [(s-1)/2 for s in spatial_shape]
+        self.center = [(s - 1) / 2 for s in spatial_shape]
 
     def __tuplify(
         self, x: Union[float, Tuple[float, ...]]

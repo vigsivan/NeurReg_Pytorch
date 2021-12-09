@@ -49,10 +49,13 @@ def main(params):
     dataloader = get_dataloader(params)
     writer = SummaryWriter(params.logdir)
 
-    model = NeurRegNet(params.target_shape)
+    model = NeurRegNet(params.target_shape).to(params.device)
+    if params.num_gpus > 1:
+        model = torch.nn.DataParallel(model)
+        model.state_dict = model.module.state_dict
     optimizer = torch.optim.Adam(model.parameters(), lr=params.lr)
     tsum = lambda t: t[0] + t[1]
-    torch.use_deterministic_algorithms=True
+    torch.use_deterministic_algorithms = True
     torch.backends.cudnn.deterministic = True
 
     epochs = params.epochs
@@ -63,6 +66,7 @@ def main(params):
         for _, data in tqdm(enumerate(dataloader)):
             steps += 1
             optimizer.zero_grad()
+            data_device = [d.to(params.device) for d in data]
             (
                 mov_im,
                 mov_seg,
@@ -71,7 +75,7 @@ def main(params):
                 transform,
                 transformed_image,
                 transformed_seg,
-            ) = data
+            ) = data_device
 
             outputs = model(
                 mov_im,

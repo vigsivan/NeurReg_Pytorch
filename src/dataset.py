@@ -69,9 +69,7 @@ class ImageDataset(Dataset):
 
     def files_generator(self, dir: Path):
         dir_files = [
-            dir / i
-            for i in os.listdir(dir)
-            if i.endswith(".nii.gz") and i[0] != "."
+            dir / i for i in os.listdir(dir) if i.endswith(".nii.gz") and i[0] != "."
         ]
         dir_files.sort()
         yield from dir_files
@@ -84,7 +82,10 @@ class ImageDataset(Dataset):
             if isinstance(image, Path) and isinstance(seg, Path):
                 sim, sse = image.name, seg.name
                 if sim != sse:
-                    raise Exception(f"Image file and seg file don't match: {sim} vs {sse}")
+                    raise Exception(
+                        f"Image file and seg file don't match: {sim} vs {sse}"
+                    )
+
     def __len__(self):
         return len(self.images)
 
@@ -97,7 +98,7 @@ class ImageDataset(Dataset):
         """
         if isinstance(x, torch.Tensor):
             return x
-        x=str(x)
+        x = str(x)
         x_tio = tio.LabelMap(x) if is_seg else tio.ScalarImage(x)
         x_tensor = x_tio.data.T.squeeze().unsqueeze(0)
         processed = torch.Tensor(self.rescale(self.size_fn(x_tensor))).float()
@@ -117,12 +118,12 @@ class ImageDataset(Dataset):
         target_seg = self.process(self.segs[next_index], index, is_seg=True)
 
         transform_field = self.simulator.get_displacement_tensor().float()
-        transformed_image: torch.Tensor = self.stn(
-            moving_image.unsqueeze(0), transform_field
-        ).squeeze().unsqueeze(0)
-        transformed_seg: torch.Tensor = self.stn(
-            moving_seg.unsqueeze(0), transform_field
-        ).squeeze().unsqueeze(0)
+        transformed_image: torch.Tensor = (
+            self.stn(moving_image.unsqueeze(0), transform_field).squeeze().unsqueeze(0)
+        )
+        transformed_seg: torch.Tensor = (
+            self.stn(moving_seg.unsqueeze(0), transform_field).squeeze().unsqueeze(0)
+        )
         transformed_image = transformed_image
         transformed_seg = transformed_seg.squeeze().unsqueeze(0)
 
